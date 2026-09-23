@@ -23,6 +23,8 @@ from rich.table import Table
 from app import __version__
 from app.core.config import AIProvider, get_settings
 from app.core.logging import configure_logging, get_logger
+from app.database.init_db import database_status, initialize_database
+from app.database.session import get_engine
 
 app = typer.Typer(
     name="sentinelflow",
@@ -59,6 +61,67 @@ def config() -> None:
             "\n[dim]AI is disabled. The deterministic pipeline is fully functional "
             "without it; no model will be contacted.[/dim]"
         )
+
+
+@app.command("init-db")
+def init_db(
+    force: bool = typer.Option(
+        False, "--force", help="Drop every existing table first. DESTROYS ALL STORED DATA."
+    ),
+    yes: bool = typer.Option(False, "--yes", "-y", help="Skip the confirmation prompt."),
+) -> None:
+    """Create the database schema, or bring an existing one up to date."""
+    configure_logging()
+    settings = get_settings()
+
+    if force and not yes:
+        console.print(
+            "[bold red]--force drops every table.[/bold red] All stored events, alerts "
+            "and analyst notes will be permanently lost."
+        )
+        console.print(f"Database: [cyan]{settings.database_url}[/cyan]")
+        if not typer.confirm("Continue?"):
+            console.print("Aborted. Nothing was changed.")
+            raise typer.Exit(code=1)
+
+    report = initialize_database(get_engine(settings), drop_existing=force)
+    console.print(f"[green]Database ready[/green] - {report.describe()}")
+    console.print(f"[dim]{report.database_url}[/dim]")
+
+
+@app.command("db-info")
+def db_info() -> None:
+    """Show schema version, table sizes and integrity settings."""
+    settings = get_settings()
+    status = database_status(get_engine(settings))
+
+    if not status["initialised"]:
+        console.print("[yellow]Database is not initialised.[/yellow] Run: sentinelflow init-db")
+        raise typer.Exit(code=1)
+
+    summary = Table(title="SentinelFlow database", header_style="bold", title_style="bold")
+    summary.add_column("Property", style="cyan", no_wrap=True)
+    summary.add_column("Value")
+    size = status["size_bytes"]
+    summary.add_row("location", status["path"] or status["database_url"])
+    summary.add_row("size", f"{size / 1024:.1f} KiB" if size else "in-memory")
+    summary.add_row(
+        "schema version",
+        f"{status['schema_version']} of {status['expected_version']}"
+        + ("" if status["up_to_date"] else "  [yellow](migration pending)[/yellow]"),
+    )
+    summary.add_row(
+        "foreign keys", "enforced" if status["foreign_keys_enforced"] else "[red]NOT enforced[/red]"
+    )
+    summary.add_row("tables", str(status["table_count"]))
+    console.print(summary)
+
+    rows = Table(title="Row counts", header_style="bold", title_style="bold")
+    rows.add_column("Table", style="cyan", no_wrap=True)
+    rows.add_column("Rows", justify="right")
+    for name, count in status["row_counts"].items():
+        rows.add_row(name, str(count))
+    console.print(rows)
 
 
 @app.command()
@@ -113,6 +176,29 @@ def doctor() -> None:
     if db_status is _FAIL:
         failures += 1
     table.add_row("database path", db_status, db_detail)
+
+    # --- Schema ---------------------------------------------------------
+    try:
+        status = database_status(get_engine(settings))
+        if not status["initialised"]:
+            table.add_row("database schema", _WARN, "not initialised - run: sentinelflow init-db")
+        elif not status["up_to_date"]:
+            failures += 1
+            table.add_row(
+                "database schema",
+                _FAIL,
+                f"version {status['schema_version']}, expected {status['expected_version']}",
+            )
+        else:
+            table.add_row(
+                "database schema",
+                _OK,
+                f"version {status['schema_version']}, {status['table_count']} tables, "
+                f"foreign keys {'enforced' if status['foreign_keys_enforced'] else 'OFF'}",
+            )
+    except Exception as exc:
+        failures += 1
+        table.add_row("database schema", _FAIL, f"{type(exc).__name__}: {exc}")
 
     # --- Optional AI ----------------------------------------------------
     if not settings.ai_active:

@@ -11,9 +11,13 @@ from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
+from sqlalchemy import Engine
+from sqlalchemy.orm import Session, sessionmaker
 
 from app.core.config import Settings, get_settings
 from app.core.logging import reset_logging
+from app.database.init_db import initialize_database
+from app.database.session import create_db_engine, get_engine, reset_engine
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
@@ -49,3 +53,49 @@ def _isolate_logging() -> Iterator[None]:
 @pytest.fixture
 def project_root() -> Path:
     return PROJECT_ROOT
+
+
+# ---------------------------------------------------------------------------
+# Database fixtures
+# ---------------------------------------------------------------------------
+@pytest.fixture
+def db_settings(tmp_path: Path, clean_env: pytest.MonkeyPatch) -> Settings:
+    """Settings pointing at a throwaway SQLite file.
+
+    A real file rather than ``:memory:`` on purpose: the pragmas under test
+    (foreign keys, WAL) only behave realistically against a file.
+    """
+    return Settings(_env_file=None, database_url=f"sqlite:///{tmp_path / 'test.db'}")
+
+
+@pytest.fixture
+def db_engine(db_settings: Settings) -> Iterator[Engine]:
+    engine = create_db_engine(db_settings)
+    initialize_database(engine)
+    yield engine
+    engine.dispose()
+
+
+@pytest.fixture
+def db_session(db_engine: Engine) -> Iterator[Session]:
+    factory = sessionmaker(bind=db_engine, expire_on_commit=False, autoflush=False)
+    session = factory()
+    try:
+        yield session
+    finally:
+        session.rollback()
+        session.close()
+
+
+@pytest.fixture
+def global_db(db_settings: Settings) -> Iterator[Settings]:
+    """Point the process-wide engine at a throwaway database.
+
+    Needed by anything that goes through ``session_scope`` or the FastAPI
+    dependency, both of which use the module-level singleton rather than an
+    injected engine.
+    """
+    reset_engine()
+    initialize_database(get_engine(db_settings))
+    yield db_settings
+    reset_engine()

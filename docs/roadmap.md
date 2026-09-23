@@ -11,7 +11,7 @@ Legend: **Done** · *In progress* · Planned
 |---|---|---|
 | 1 | Environment, repository, configuration, logging, CI | **Done** |
 | 2 | Canonical event schema and domain models (Pydantic) | **Done** |
-| 3 | SQLite persistence, ORM models, schema init | Planned |
+| 3 | SQLite persistence, ORM models, schema init | **Done** |
 
 ## Milestone 2 — Pipeline
 
@@ -71,3 +71,21 @@ Legend: **Done** · *In progress* · Planned
   deviations from the original flat schema
 * 188 new tests, including `tests/test_ai_boundary.py`, which asserts the
   deterministic/AI separation structurally
+
+## Stage 3 - delivered
+
+* `app/database/base.py` - `UtcDateTime` (SQLite returns naive datetimes from a
+  plain timezone-aware column, which would shift every correlation window) and
+  enum columns stored as API values with a real CHECK constraint
+* `app/database/session.py` - engine factory with the SQLite pragmas that
+  matter: `foreign_keys=ON` (off by default), WAL, busy timeout
+* `app/database/tables.py` - 16 tables; `ai_analysis.is_advisory` carries a
+  CHECK constraint and `mitre_mappings.technique_id` is a foreign key into the
+  ATT&CK catalogue, so fabricated techniques are refused by the schema
+* `app/database/init_db.py` - idempotent creation, `schema_version` stamping
+  and an ordered migration runner
+* `app/database/mappers.py` and `repository.py` - the rest of the application
+  asks for domain objects and never sees a row or writes a query
+* CLI: `sentinelflow init-db`, `sentinelflow db-info`; `doctor` now checks the
+  schema version
+* 44 new tests, mostly integration against a real SQLite file

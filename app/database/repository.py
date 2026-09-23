@@ -1,0 +1,323 @@
+"""Persistence operations, expressed in domain terms.
+
+The rest of the application asks for "the alert with this id" and receives a
+Pydantic :class:`~app.models.alert.Alert`. It never sees a row, never builds a
+query and never imports SQLAlchemy. That keeps the storage decisions here,
+where they can be changed without touching the pipeline or the dashboard.
+
+Every query is built with SQLAlchemy expressions and bound parameters. There is
+no place in this module where a value becomes part of a SQL string, which is
+what makes hostile field content — the whole point of the data SentinelFlow
+ingests — structurally unable to alter a query.
+"""
+
+from __future__ import annotations
+
+from collections.abc import Iterable, Sequence
+from datetime import datetime
+from uuid import UUID
+
+from sqlalchemy import select
+from sqlalchemy.orm import Session, selectinload
+
+from app.database import mappers
+from app.database.tables import (
+    AIAnalysisRow,
+    AlertRow,
+    AnalystNoteRow,
+    AuditLogRow,
+    EventRow,
+    IncidentRow,
+    IndicatorRow,
+    MitreTechniqueRow,
+)
+from app.models.ai import AIAnalysis
+from app.models.alert import Alert
+from app.models.analyst import AnalystNote, AuditEntry
+from app.models.enums import AlertStatus, Severity
+from app.models.event import SecurityEvent
+from app.models.incident import Incident
+from app.models.indicator import Indicator
+from app.models.mitre import MitreTechnique
+
+_ALERT_LOADERS = (
+    selectinload(AlertRow.detections),
+    selectinload(AlertRow.indicators),
+    selectinload(AlertRow.mitre_mappings),
+    selectinload(AlertRow.events),
+)
+
+
+# ---------------------------------------------------------------------------
+# Events
+# ---------------------------------------------------------------------------
+def save_event(session: Session, event: SecurityEvent) -> EventRow:
+    """Store one event. Events are immutable, so this is always an insert."""
+    row = mappers.event_to_row(event)
+    session.add(row)
+    session.flush()
+    return row
+
+
+def save_events(session: Session, events: Iterable[SecurityEvent]) -> int:
+    """Store many events in one flush. Returns the number stored."""
+    rows = [mappers.event_to_row(event) for event in events]
+    session.add_all(rows)
+    session.flush()
+    return len(rows)
+
+
+def get_event(session: Session, event_id: UUID) -> SecurityEvent | None:
+    row = session.get(EventRow, event_id)
+    return mappers.row_to_event(row) if row else None
+
+
+def list_events(
+    session: Session,
+    *,
+    source: str | None = None,
+    hostname_key: str | None = None,
+    username_key: str | None = None,
+    since: datetime | None = None,
+    until: datetime | None = None,
+    limit: int = 100,
+    offset: int = 0,
+) -> list[SecurityEvent]:
+    """Query events by the indexed correlation keys."""
+    query = select(EventRow).order_by(EventRow.timestamp.desc())
+    if source is not None:
+        query = query.where(EventRow.source == source)
+    if hostname_key is not None:
+        query = query.where(EventRow.hostname_key == hostname_key)
+    if username_key is not None:
+        query = query.where(EventRow.username_key == username_key)
+    if since is not None:
+        query = query.where(EventRow.timestamp >= since)
+    if until is not None:
+        query = query.where(EventRow.timestamp <= until)
+    rows: Sequence[EventRow] = session.scalars(query.limit(limit).offset(offset)).all()
+    return [mappers.row_to_event(row) for row in rows]
+
+
+def count_events(session: Session) -> int:
+    return len(session.scalars(select(EventRow.event_id)).all())
+
+
+# ---------------------------------------------------------------------------
+# Indicators and ATT&CK catalogue
+# ---------------------------------------------------------------------------
+def upsert_indicator(session: Session, indicator: Indicator) -> IndicatorRow:
+    """Record a sighting, merging into an existing indicator when one exists.
+
+    Indicators are unique per (type, value): seeing ``10.0.0.5`` in fifty events
+    is one indicator with fifty sightings, not fifty indicators.
+    """
+    existing = session.scalar(
+        select(IndicatorRow).where(
+            IndicatorRow.indicator_type == indicator.indicator_type,
+            IndicatorRow.value == indicator.value,
+        )
+    )
+    if existing is not None:
+        existing.first_seen = min(existing.first_seen, indicator.first_seen)
+        existing.last_seen = max(existing.last_seen, indicator.last_seen)
+        existing.occurrences += indicator.occurrences
+        session.flush()
+        return existing
+
+    row = mappers.indicator_to_row(indicator)
+    session.add(row)
+    session.flush()
+    return row
+
+
+def upsert_technique(session: Session, technique: MitreTechnique) -> MitreTechniqueRow:
+    """Insert or refresh a technique in the ATT&CK catalogue."""
+    existing = session.get(MitreTechniqueRow, technique.technique_id)
+    if existing is not None:
+        existing.name = technique.name
+        existing.tactics = list(technique.tactics)
+        existing.description = technique.description
+        session.flush()
+        return existing
+
+    row = mappers.technique_to_row(technique)
+    session.add(row)
+    session.flush()
+    return row
+
+
+def list_indicators(session: Session, *, limit: int = 100) -> list[Indicator]:
+    rows = session.scalars(
+        select(IndicatorRow).order_by(IndicatorRow.last_seen.desc()).limit(limit)
+    ).all()
+    return [mappers.row_to_indicator(row) for row in rows]
+
+
+# ---------------------------------------------------------------------------
+# Alerts
+# ---------------------------------------------------------------------------
+def save_alert(session: Session, alert: Alert) -> AlertRow:
+    """Store an alert with its detections, indicators and ATT&CK mappings.
+
+    Techniques are registered in the catalogue first, because
+    ``mitre_mappings.technique_id`` is a foreign key into it — a mapping to a
+    technique that does not exist is rejected by the database.
+    """
+    for mapping in alert.mitre:
+        upsert_technique(session, mapping.technique)
+
+    row = mappers.alert_to_row(alert)
+    session.add(row)
+    session.flush()
+
+    if alert.event_ids:
+        events = session.scalars(
+            select(EventRow).where(EventRow.event_id.in_(alert.event_ids))
+        ).all()
+        row.events = list(events)
+
+    row.indicators = [upsert_indicator(session, indicator) for indicator in alert.indicators]
+    session.flush()
+    return row
+
+
+def get_alert(session: Session, alert_id: UUID) -> Alert | None:
+    row = session.scalar(
+        select(AlertRow).where(AlertRow.alert_id == alert_id).options(*_ALERT_LOADERS)
+    )
+    return mappers.row_to_alert(row) if row else None
+
+
+def list_alerts(
+    session: Session,
+    *,
+    status: AlertStatus | None = None,
+    severity: Severity | None = None,
+    incident_id: UUID | None = None,
+    open_only: bool = False,
+    limit: int = 50,
+    offset: int = 0,
+) -> list[Alert]:
+    query = select(AlertRow).options(*_ALERT_LOADERS).order_by(AlertRow.created_at.desc())
+    if status is not None:
+        query = query.where(AlertRow.status == status)
+    if severity is not None:
+        query = query.where(AlertRow.severity_level == severity)
+    if incident_id is not None:
+        query = query.where(AlertRow.incident_id == incident_id)
+    if open_only:
+        open_statuses = [s for s in AlertStatus if s.is_open]
+        query = query.where(AlertRow.status.in_(open_statuses))
+    rows = session.scalars(query.limit(limit).offset(offset)).all()
+    return [mappers.row_to_alert(row) for row in rows]
+
+
+def update_alert_status(session: Session, alert_id: UUID, status: AlertStatus) -> AlertRow | None:
+    """Change an alert's status. Callers are expected to write an audit entry."""
+    row = session.get(AlertRow, alert_id)
+    if row is None:
+        return None
+    row.status = status
+    row.updated_at = _now()
+    if not status.is_open and row.closed_at is None:
+        row.closed_at = row.updated_at
+    session.flush()
+    return row
+
+
+# ---------------------------------------------------------------------------
+# Incidents
+# ---------------------------------------------------------------------------
+def save_incident(session: Session, incident: Incident) -> IncidentRow:
+    row = mappers.incident_to_row(incident)
+    session.add(row)
+    session.flush()
+    if incident.alert_ids:
+        alerts = session.scalars(
+            select(AlertRow).where(AlertRow.alert_id.in_(incident.alert_ids))
+        ).all()
+        for alert_row in alerts:
+            alert_row.incident_id = row.incident_id
+        session.flush()
+    return row
+
+
+def get_incident(session: Session, incident_id: UUID) -> Incident | None:
+    row = session.scalar(
+        select(IncidentRow)
+        .where(IncidentRow.incident_id == incident_id)
+        .options(selectinload(IncidentRow.alerts))
+    )
+    return mappers.row_to_incident(row) if row else None
+
+
+def list_incidents(session: Session, *, limit: int = 50) -> list[Incident]:
+    rows = session.scalars(
+        select(IncidentRow)
+        .options(selectinload(IncidentRow.alerts))
+        .order_by(IncidentRow.created_at.desc())
+        .limit(limit)
+    ).all()
+    return [mappers.row_to_incident(row) for row in rows]
+
+
+# ---------------------------------------------------------------------------
+# Optional AI analysis
+# ---------------------------------------------------------------------------
+def save_ai_analysis(session: Session, analysis: AIAnalysis) -> AIAnalysisRow:
+    """Store advisory model output. Writes only to ``ai_analysis``."""
+    row = mappers.ai_analysis_to_row(analysis)
+    session.add(row)
+    session.flush()
+    return row
+
+
+def get_ai_analyses(session: Session, alert_id: UUID) -> list[AIAnalysis]:
+    rows = session.scalars(
+        select(AIAnalysisRow)
+        .where(AIAnalysisRow.alert_id == alert_id)
+        .options(selectinload(AIAnalysisRow.statements))
+        .order_by(AIAnalysisRow.generated_at.desc())
+    ).all()
+    return [mappers.row_to_ai_analysis(row) for row in rows]
+
+
+# ---------------------------------------------------------------------------
+# Analyst workflow
+# ---------------------------------------------------------------------------
+def add_note(session: Session, note: AnalystNote) -> AnalystNoteRow:
+    row = mappers.note_to_row(note)
+    session.add(row)
+    session.flush()
+    return row
+
+
+def list_notes(session: Session, *, alert_id: UUID | None = None) -> list[AnalystNote]:
+    query = select(AnalystNoteRow).order_by(AnalystNoteRow.created_at.asc())
+    if alert_id is not None:
+        query = query.where(AnalystNoteRow.alert_id == alert_id)
+    return [mappers.row_to_note(row) for row in session.scalars(query).all()]
+
+
+def record_audit(session: Session, entry: AuditEntry) -> AuditLogRow:
+    """Append to the audit trail. Entries are never updated or deleted."""
+    row = mappers.audit_to_row(entry)
+    session.add(row)
+    session.flush()
+    return row
+
+
+def list_audit(
+    session: Session, *, object_id: UUID | None = None, limit: int = 100
+) -> list[AuditEntry]:
+    query = select(AuditLogRow).order_by(AuditLogRow.occurred_at.desc()).limit(limit)
+    if object_id is not None:
+        query = query.where(AuditLogRow.object_id == object_id)
+    return [mappers.row_to_audit(row) for row in session.scalars(query).all()]
+
+
+def _now() -> datetime:
+    from app.models.base import utcnow
+
+    return utcnow()

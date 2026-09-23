@@ -138,11 +138,13 @@ sentinelflow doctor
 ```bash
 sentinelflow version    # show the version
 sentinelflow config     # show effective configuration (no secrets)
-sentinelflow doctor     # environment health check
+sentinelflow doctor     # environment and schema health check
+sentinelflow init-db    # create the database schema
+sentinelflow db-info    # schema version, table sizes, integrity settings
 ```
 
-Additional commands (`init-db`, `import`, `demo`, `serve`, `report`) arrive with
-their corresponding stages.
+Additional commands (`import`, `demo`, `serve`, `report`) arrive with their
+corresponding stages.
 
 ## Configuration
 
