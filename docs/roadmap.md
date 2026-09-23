@@ -10,7 +10,7 @@ Legend: **Done** · *In progress* · Planned
 | Stage | Scope | Status |
 |---|---|---|
 | 1 | Environment, repository, configuration, logging, CI | **Done** |
-| 2 | Canonical event schema and domain models (Pydantic) | Planned |
+| 2 | Canonical event schema and domain models (Pydantic) | **Done** |
 | 3 | SQLite persistence, ORM models, schema init | Planned |
 
 ## Milestone 2 — Pipeline
@@ -53,3 +53,21 @@ Legend: **Done** · *In progress* · Planned
 * `app/cli.py` — `version`, `config`, `doctor`
 * `Makefile`, GitHub Actions CI across Python 3.12 and 3.13
 * 60+ tests covering configuration, logging safety and repository hygiene
+
+## Stage 2 - delivered
+
+* `app/core/sanitize.py` - normalisation for untrusted values: Unicode NFC,
+  removal of zero-width and bidi-override characters, marked truncation,
+  canonical IP/domain/hash/email forms
+* `app/models/enums.py` - controlled vocabularies, including a `Severity` that
+  is ordered by rank rather than alphabetically
+* `app/models/base.py` - frozen `EvidenceModel` vs mutable `WorkflowModel`,
+  UTC coercion, implausible-timestamp rejection, bounded raw payloads
+* `SecurityEvent` - the canonical schema; observation only, no verdict fields
+* `Indicator`, `DetectionResult`, `MitreTechnique`/`MitreMapping` (reason
+  mandatory), `AlertSeverity`/`Alert`, `Incident`, `AIAnalysis`, `AnalystNote`,
+  `AuditEntry`
+* `docs/data-model.md` with a class diagram and the rationale for the three
+  deviations from the original flat schema
+* 188 new tests, including `tests/test_ai_boundary.py`, which asserts the
+  deterministic/AI separation structurally

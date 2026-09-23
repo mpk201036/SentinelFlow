@@ -188,6 +188,7 @@ where the boundaries are.
 | Document | Contents |
 |---|---|
 | [docs/architecture.md](docs/architecture.md) | System design and data flow |
+| [docs/data-model.md](docs/data-model.md) | Domain models and where the trust boundary is enforced |
 | [docs/roadmap.md](docs/roadmap.md) | Build stages and current status |
 | [SECURITY.md](SECURITY.md) | Threat model and controls |
 
