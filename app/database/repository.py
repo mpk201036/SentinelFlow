@@ -15,10 +15,11 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Sequence
 from datetime import datetime
-from typing import Any
+from typing import Any, cast
 from uuid import UUID
 
-from sqlalchemy import func, select
+import sqlalchemy as sa
+from sqlalchemy import CursorResult, func, select
 from sqlalchemy.orm import Session, selectinload
 
 from app.database import mappers
@@ -310,6 +311,72 @@ def list_alerts(
         query = query.where(AlertRow.status.in_(open_statuses))
     rows = session.scalars(query.limit(limit).offset(offset)).all()
     return [mappers.row_to_alert(row) for row in rows]
+
+
+def events_awaiting_triage(session: Session, *, limit: int = 1_000) -> list[SecurityEvent]:
+    """Stored events the pipeline has not processed yet.
+
+    Deliberately not "events with no alert". A threshold rule anchors its
+    detection on the last event of a burst, so the rest of the burst has no
+    alert of its own and would be re-evaluated forever, producing a duplicate
+    brute-force alert on every run.
+    """
+    rows = session.scalars(
+        select(EventRow)
+        .where(EventRow.triaged_at.is_(None))
+        .order_by(EventRow.timestamp.asc())
+        .limit(limit)
+    ).all()
+    return [mappers.row_to_event(row) for row in rows]
+
+
+def mark_events_triaged(session: Session, event_ids: Iterable[UUID]) -> int:
+    """Record that the pipeline has processed these events."""
+    ids = list(event_ids)
+    if not ids:
+        return 0
+    moment = _now()
+    result = cast(
+        "CursorResult[Any]",
+        session.execute(
+            sa.update(EventRow).where(EventRow.event_id.in_(ids)).values(triaged_at=moment)
+        ),
+    )
+    session.flush()
+    return int(result.rowcount or 0)
+
+
+def count_recent_alerts_for_host(session: Session, hostname_key: str, *, since: datetime) -> int:
+    """Alerts already raised for a host, by the time of the event behind them.
+
+    Feeds the severity engine's repeat-activity factor. Counted on the event's
+    timestamp rather than the alert's creation time, so importing a week-old
+    export does not make everything in it look like a fresh burst.
+    """
+    return int(
+        session.scalar(
+            select(func.count())
+            .select_from(AlertRow)
+            .join(EventRow, EventRow.event_id == AlertRow.primary_event_id)
+            .where(EventRow.hostname_key == hostname_key, EventRow.timestamp >= since)
+        )
+        or 0
+    )
+
+
+def count_alerts(session: Session, *, status: AlertStatus | None = None) -> int:
+    query = select(func.count()).select_from(AlertRow)
+    if status is not None:
+        query = query.where(AlertRow.status == status)
+    return int(session.scalar(query) or 0)
+
+
+def severity_breakdown(session: Session) -> dict[str, int]:
+    """Alert counts per severity band, for the dashboard and the CLI."""
+    rows = session.execute(
+        select(AlertRow.severity_level, func.count()).group_by(AlertRow.severity_level)
+    ).all()
+    return {str(level.value): int(count) for level, count in rows}
 
 
 def update_alert_status(session: Session, alert_id: UUID, status: AlertStatus) -> AlertRow | None:

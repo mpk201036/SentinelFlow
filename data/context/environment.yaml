@@ -1,0 +1,45 @@
+# Environment context used by the severity engine.
+#
+# Everything here is a fact about *this* estate, not about attacker behaviour.
+# The same encoded PowerShell command deserves a different response on a
+# developer laptop and on a domain controller, and the only thing that can know
+# the difference is a list somebody maintains.
+#
+# This file is the honest version of "asset criticality". It is small, it is
+# editable, and every entry that influences a score appears by name in the
+# alert's severity breakdown - so an analyst can see that a score was raised
+# because the host is on this list, and can check whether that is still true.
+
+# --- Hosts that matter more than others -----------------------------------
+critical_hosts:
+  - SRV-FILE-01
+  - SRV-DB-01
+
+# Shell-style patterns, matched case-insensitively against the hostname.
+critical_host_patterns:
+  - "dc-*"          # domain controllers
+  - "*-dc??"
+  - "srv-*"         # servers, as opposed to workstations
+  - "*-prod-*"
+
+# --- Accounts that matter more than others --------------------------------
+privileged_accounts:
+  - administrator
+  - root
+  - domain admin
+
+privileged_account_patterns:
+  - "adm-*"
+  - "*-admin"
+  - "da-*"          # domain admin naming convention
+  - "svc-*"         # service accounts: high privilege, no human to ask
+
+# --- When activity is unusual ---------------------------------------------
+# Interpreted in UTC, because that is what the events carry. Set these to match
+# the estate's working hours; leave them alone if out-of-hours weighting is not
+# wanted, and set enabled to false to remove the factor entirely.
+business_hours:
+  enabled: true
+  start_hour: 8
+  end_hour: 18
+  workdays: [monday, tuesday, wednesday, thursday, friday]

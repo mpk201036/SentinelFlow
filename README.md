@@ -174,6 +174,14 @@ sentinelflow mitre --coverage           # ATT&CK tactic coverage, gaps included
 sentinelflow mitre --technique T1059.001
 ```
 
+Triage:
+
+```bash
+sentinelflow triage                     # score stored events and create alerts
+sentinelflow alerts --open              # the queue
+sentinelflow alert 20ea                 # one alert in full, by id prefix
+```
+
 Additional commands (`serve`, `report`) arrive with their corresponding stages.
 
 ## Configuration
@@ -225,6 +233,7 @@ where the boundaries are.
 | [docs/ioc-extraction.md](docs/ioc-extraction.md) | Indicator extraction and its false-positive controls |
 | [docs/detection-engine.md](docs/detection-engine.md) | The rule language, the engine, and what ships |
 | [docs/mitre-attack.md](docs/mitre-attack.md) | How mappings are justified, and what is refused |
+| [docs/severity.md](docs/severity.md) | The scoring factors and why the AI cannot reach them |
 | [docs/roadmap.md](docs/roadmap.md) | Build stages and current status |
 | [SECURITY.md](SECURITY.md) | Threat model and controls |
 

@@ -15,6 +15,7 @@ import os
 import platform
 import sys
 from pathlib import Path
+from typing import Any
 
 import typer
 from rich.console import Console
@@ -26,12 +27,13 @@ from app.core.logging import configure_logging, get_logger
 from app.database.init_db import database_status, initialize_database
 from app.database.session import get_engine, session_scope
 from app.detection import DetectionEngine, load_rules, rules_by_technique
-from app.enrichment import EnrichmentService, EnrichmentSummary
+from app.enrichment import EnrichmentService
 from app.ingestion import IngestionService, generate_dataset, group_by_adapter, list_adapters
 from app.ingestion.service import IngestionOutcome
 from app.mitre import MitreMapper, load_catalogue, tactic_coverage, validate_rule_techniques
-from app.models.enums import IndicatorType
+from app.models.enums import AlertStatus, IndicatorType, Severity
 from app.models.ingestion import IngestionReport
+from app.services import TriagePipeline
 
 app = typer.Typer(
     name="sentinelflow",
@@ -381,21 +383,17 @@ def demo(
     grouped = group_by_adapter(generate_dataset())
 
     outcomes: list[IngestionOutcome] = []
-    enrichment = EnrichmentSummary()
+    ingested: list[Any] = []
     with session_scope(settings) as session:
         service = IngestionService(session, settings)
-        enricher = EnrichmentService(session)
         for adapter_name, records in sorted(grouped.items()):
             outcome = service.ingest_mappings(
                 records, adapter_name=adapter_name, origin=f"demo:{adapter_name}", force=force
             )
             outcomes.append(outcome)
-            batch = enricher.enrich_events(outcome.events)
-            enrichment.events_processed += batch.events_processed
-            enrichment.indicators_found += batch.indicators_found
-            enrichment.indicators_new += batch.indicators_new
-            for name, count in batch.by_type.items():
-                enrichment.by_type[name] = enrichment.by_type.get(name, 0) + count
+            ingested.extend(outcome.events)
+
+        triage = TriagePipeline(session, settings).process(ingested)
 
     table = Table(title="Demo ingestion", header_style="bold", title_style="bold")
     table.add_column("Source", style="cyan")
@@ -405,9 +403,10 @@ def demo(
         table.add_row(outcome.report.adapter, str(outcome.accepted), str(outcome.rejected))
     console.print(table)
     console.print(f"[green]{sum(o.accepted for o in outcomes)} events ingested.[/green]")
-    if enrichment.indicators_found:
-        console.print(f"[green]{enrichment.indicators_new} distinct indicators extracted.[/green]")
-        console.print(f"[dim]{enrichment.by_type}[/dim]")
+    console.print(f"[green]{triage.summary()}[/green]")
+    if triage.alerts:
+        console.print(f"[bold]Severity:[/bold] {triage.severity_counts()}")
+        console.print("[dim]Review them with: sentinelflow alerts[/dim]")
 
 
 @app.command()
@@ -789,3 +788,244 @@ def mitre(
             for technique in catalogue.techniques.values():
                 repository.upsert_technique(session, technique)
         console.print(f"[green]{len(catalogue)} techniques synchronised to the database.[/green]")
+
+
+# ---------------------------------------------------------------------------
+# Triage and alerts
+# ---------------------------------------------------------------------------
+_SEVERITY_COLOURS = {"low": "green", "medium": "yellow", "high": "red", "critical": "bold red"}
+_STATUS_COLOURS = {
+    "new": "bold white",
+    "investigating": "cyan",
+    "escalated": "red",
+    "benign": "green",
+    "closed": "dim",
+}
+
+
+def _severity_text(level: Severity, score: int | None = None) -> str:
+    colour = _SEVERITY_COLOURS.get(level.value, "white")
+    suffix = f" {score}" if score is not None else ""
+    return f"[{colour}]{level.value}{suffix}[/{colour}]"
+
+
+@app.command()
+def triage(
+    limit: int = typer.Option(1000, "--limit", "-l", help="Maximum events to process."),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Score and report, but store nothing."),
+) -> None:
+    """Run the deterministic pipeline over stored events and create alerts."""
+    configure_logging()
+    settings = get_settings()
+
+    with session_scope(settings) as session:
+        result = TriagePipeline(session, settings).process_stored(limit=limit, persist=not dry_run)
+
+    if not result.events_processed:
+        console.print("[green]Every stored event has already been triaged.[/green]")
+        return
+
+    console.print(f"[bold]{result.summary()}[/bold]")
+    if result.unknown_techniques:
+        console.print(
+            f"[yellow]{len(set(result.unknown_techniques))} ATT&CK reference(s) "
+            "could not be named by the catalogue.[/yellow]"
+        )
+    if not result.alerts:
+        console.print("[green]No rules matched. Nothing to triage.[/green]")
+        return
+
+    table = Table(title="Alerts created", header_style="bold", title_style="bold")
+    table.add_column("Severity", no_wrap=True)
+    table.add_column("Score", justify="right")
+    table.add_column("Title")
+    table.add_column("Rules", style="dim", no_wrap=True)
+    for alert in result.alerts[:25]:
+        table.add_row(
+            _severity_text(alert.severity_level),
+            str(alert.severity.score),
+            alert.title[:70],
+            ", ".join(sorted(set(alert.rule_ids)))[:28],
+        )
+    console.print(table)
+    if dry_run:
+        console.print("[dim]Dry run - nothing was stored.[/dim]")
+    else:
+        console.print("[dim]Open one with: sentinelflow alert <id prefix>[/dim]")
+
+
+@app.command()
+def alerts(
+    status: str | None = typer.Option(
+        None, "--status", "-s", help="new, investigating, benign, escalated, closed."
+    ),
+    severity: str | None = typer.Option(None, "--severity", help="low, medium, high, critical."),
+    open_only: bool = typer.Option(False, "--open", help="Only alerts still being worked."),
+    limit: int = typer.Option(25, "--limit", "-l", help="How many to show."),
+) -> None:
+    """List alerts awaiting triage."""
+    from app.database import repository
+
+    settings = get_settings()
+    try:
+        wanted_status = AlertStatus(status) if status else None
+        wanted_severity = Severity(severity) if severity else None
+    except ValueError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(code=1) from exc
+
+    with session_scope(settings) as session:
+        found = repository.list_alerts(
+            session,
+            status=wanted_status,
+            severity=wanted_severity,
+            open_only=open_only,
+            limit=limit,
+        )
+        breakdown = repository.severity_breakdown(session)
+        total = repository.count_alerts(session)
+
+    if not found:
+        console.print("[yellow]No alerts match.[/yellow] Run: sentinelflow triage")
+        return
+
+    table = Table(title="Alerts", header_style="bold", title_style="bold")
+    table.add_column("ID", style="dim", no_wrap=True)
+    table.add_column("Severity", no_wrap=True)
+    table.add_column("Status", no_wrap=True)
+    table.add_column("Created", style="dim", no_wrap=True)
+    table.add_column("Title")
+    for alert in found:
+        status_colour = _STATUS_COLOURS.get(alert.status.value, "white")
+        table.add_row(
+            str(alert.alert_id)[:8],
+            _severity_text(alert.severity_level, alert.severity.score),
+            f"[{status_colour}]{alert.status.value}[/{status_colour}]",
+            alert.created_at.strftime("%Y-%m-%d %H:%M"),
+            alert.title[:62],
+        )
+    console.print(table)
+    console.print(f"[dim]{total} alerts total - {breakdown}[/dim]")
+
+
+@app.command("alert")
+def show_alert(
+    alert_id: str = typer.Argument(..., help="Alert id, or a unique prefix of one."),
+) -> None:
+    """Show one alert in full: evidence, detections, indicators, ATT&CK, score."""
+    from app.database import repository
+
+    settings = get_settings()
+    prefix = alert_id.strip().lower().replace("-", "")
+
+    with session_scope(settings) as session:
+        candidates = [
+            alert
+            for alert in repository.list_alerts(session, limit=500)
+            if str(alert.alert_id).replace("-", "").startswith(prefix)
+        ]
+        if len(candidates) != 1:
+            if not candidates:
+                console.print(f"[red]No alert starts with {alert_id!r}.[/red]")
+            else:
+                console.print(f"[red]{len(candidates)} alerts start with {alert_id!r}.[/red]")
+            raise typer.Exit(code=1)
+
+        alert = candidates[0]
+        event = repository.get_event(session, alert.primary_event_id)
+        notes = repository.list_notes(session, alert_id=alert.alert_id)
+        analyses = repository.get_ai_analyses(session, alert.alert_id)
+
+    console.print(f"\n[bold]{alert.title}[/bold]")
+    console.print(f"[dim]{alert.alert_id}[/dim]\n")
+
+    header = Table(show_header=False, box=None, pad_edge=False)
+    header.add_column(style="cyan", no_wrap=True)
+    header.add_column()
+    header.add_row(
+        "Severity",
+        f"{_severity_text(alert.severity_level)}  {alert.severity.score}/100  [dim](deterministic)[/dim]",
+    )
+    header.add_row("Confidence", alert.confidence.value)
+    header.add_row("Status", alert.status.value)
+    header.add_row("Classification", alert.classification.value if alert.classification else "-")
+    header.add_row("Created", alert.created_at.strftime("%Y-%m-%d %H:%M:%S UTC"))
+    console.print(header)
+
+    # --- Observed evidence ---------------------------------------------
+    if event is not None:
+        console.print("\n[bold]Observed evidence[/bold]")
+        evidence = Table(show_header=False, box=None, pad_edge=False)
+        evidence.add_column(style="cyan", no_wrap=True)
+        evidence.add_column()
+        for label, value in (
+            ("Time", event.timestamp.strftime("%Y-%m-%d %H:%M:%S UTC")),
+            ("Source", event.source),
+            ("Type", event.event_type.value),
+            ("Host", event.hostname),
+            ("User", event.username),
+            ("Process", event.process_name),
+            ("Parent", event.parent_process),
+            ("Command", event.command_line),
+            ("Source IP", event.src_ip),
+            ("Dest IP", event.dst_ip),
+            ("File", event.file_path),
+            ("Message", event.event_message),
+        ):
+            if value:
+                evidence.add_row(label, str(value)[:110])
+        console.print(evidence)
+
+    # --- Why it fired ---------------------------------------------------
+    console.print("\n[bold]Detections[/bold]")
+    for detection in alert.detections:
+        console.print(
+            f"  {_severity_text(detection.rule_severity)} [cyan]{detection.rule_id}[/cyan] "
+            f"{detection.rule_name}"
+        )
+        for match in detection.matched:
+            console.print(f"      [dim]{match}[/dim]")
+        if detection.recommendation:
+            console.print(f"      [green]Next:[/green] {detection.recommendation.strip()[:150]}")
+
+    # --- Severity breakdown ---------------------------------------------
+    console.print("\n[bold]How the severity was calculated[/bold] [dim](deterministic)[/dim]")
+    for factor in alert.severity.factors:
+        console.print(f"  {factor.points:+4d}  [cyan]{factor.name}[/cyan]  {factor.detail}")
+    console.print(
+        f"  [bold]{alert.severity.score:4d}[/bold]  total -> {alert.severity_level.value}"
+    )
+
+    # --- ATT&CK ----------------------------------------------------------
+    if alert.mitre:
+        console.print("\n[bold]MITRE ATT&CK[/bold]")
+        for mapping in alert.mitre:
+            console.print(
+                f"  [cyan]{mapping.technique_id}[/cyan] {mapping.technique.name} "
+                f"[dim]({', '.join(mapping.technique.tactics)})[/dim]"
+            )
+            console.print(f"      [dim]{mapping.reason[:150]}[/dim]")
+
+    # --- Indicators -------------------------------------------------------
+    if alert.indicators:
+        console.print("\n[bold]Indicators[/bold]")
+        for indicator in alert.indicators[:15]:
+            marker = " [dim](internal)[/dim]" if indicator.is_internal else ""
+            console.print(
+                f"  [cyan]{indicator.indicator_type.value:13}[/cyan] {indicator.value[:80]}{marker}"
+            )
+
+    # --- Analyst ----------------------------------------------------------
+    if notes:
+        console.print("\n[bold]Analyst notes[/bold]")
+        for note in notes:
+            console.print(
+                f"  [dim]{note.created_at:%Y-%m-%d %H:%M}[/dim] {note.author}: {note.body[:120]}"
+            )
+
+    if analyses:
+        console.print("\n[bold yellow]AI SUGGESTION - NOT AUTHORITATIVE[/bold yellow]")
+        for analysis in analyses[:1]:
+            console.print(f"  [dim]{analysis.provider}/{analysis.model}[/dim]")
+            console.print(f"  {analysis.summary[:300]}")
+    console.print()

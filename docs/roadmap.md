@@ -21,7 +21,7 @@ Legend: **Done** · *In progress* · Planned
 | 5 | IOC extraction engine | **Done** |
 | 6 | Detection engine and YAML rule set (10+ rules) | **Done** |
 | 7 | MITRE ATT&CK catalogue and evidence-backed mapping | **Done** |
-| 8 | Deterministic severity engine | Planned |
+| 8 | Deterministic severity engine | **Done** |
 | 9 | Alert correlation and potential-incident grouping | Planned |
 
 ## Milestone 3 — Interface
@@ -165,3 +165,21 @@ Legend: **Done** · *In progress* · Planned
   `rules --validate` now also checks every ATT&CK reference resolves
 * `docs/mitre-attack.md`
 * 37 new tests, most of them about what the mapper refuses to claim
+
+## Stage 8 - delivered
+
+* `app/services/context.py` - environment context: the critical hosts,
+  privileged accounts and working hours this estate cares about, quoted by name
+  in every factor that uses them
+* `app/services/severity.py` - ten additive, explainable factors. The base is
+  the worst rule rather than the sum, the same rule twice does not corroborate,
+  and low confidence subtracts
+* `app/services/alerting.py` - one alert per event carrying every rule that
+  fired on it, with a title an analyst can triage from the queue
+* `app/services/pipeline.py` - enrich, detect, map, score, alert; deterministic
+  end to end, with the optional AI deliberately absent from the sequence
+* Schema version 4: `events.triaged_at`, the first migration `create_all`
+  cannot perform
+* CLI: `triage`, `alerts`, `alert <id prefix>` with the full severity breakdown
+* `docs/severity.md`
+* 55 new tests, including three that assert the AI cannot influence a score

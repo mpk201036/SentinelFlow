@@ -57,6 +57,21 @@ def _add_event_indicator_link(connection: Connection) -> None:
     Base.metadata.create_all(connection, tables=[Base.metadata.tables["event_indicators"]])
 
 
+def _add_event_triage_marker(connection: Connection) -> None:
+    """Version 4: record when the pipeline last processed an event.
+
+    The first migration that ``create_all`` cannot perform, because it alters an
+    existing table rather than adding a new one. Guarded so it is safe to run
+    against a database that already has the column.
+    """
+    columns = {row[1] for row in connection.execute(sa.text("PRAGMA table_info(events)"))}
+    if "triaged_at" not in columns:
+        connection.execute(sa.text("ALTER TABLE events ADD COLUMN triaged_at DATETIME"))
+    connection.execute(
+        sa.text("CREATE INDEX IF NOT EXISTS ix_events_triaged_at ON events (triaged_at)")
+    )
+
+
 #: Ordered migrations applied on top of the baseline.
 MIGRATIONS: tuple[Migration, ...] = (
     Migration(
@@ -68,6 +83,11 @@ MIGRATIONS: tuple[Migration, ...] = (
         version=3,
         description="add event_indicators",
         upgrade=_add_event_indicator_link,
+    ),
+    Migration(
+        version=4,
+        description="add events.triaged_at",
+        upgrade=_add_event_triage_marker,
     ),
 )
 

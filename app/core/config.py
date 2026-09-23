@@ -181,6 +181,12 @@ class Settings(BaseSettings):
 
     @computed_field  # type: ignore[prop-decorator]
     @property
+    def context_file(self) -> Path:
+        """Environment context used by the severity engine."""
+        return PROJECT_ROOT / "data" / "context" / "environment.yaml"
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
     def ai_active(self) -> bool:
         """True only when AI is both enabled *and* a real provider is chosen.
 

@@ -46,7 +46,7 @@ from app.models.ingestion import RejectionReason
 # ---------------------------------------------------------------------------
 # Schema versioning
 # ---------------------------------------------------------------------------
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 
 
 class SchemaVersion(Base):
@@ -160,6 +160,15 @@ class EventRow(Base):
 
     tags: Mapped[list[str]] = mapped_column(sa.JSON, nullable=False, default=list)
     raw_event: Mapped[dict[str, Any]] = mapped_column(sa.JSON, nullable=False, default=dict)
+
+    # When the triage pipeline last processed this event.
+    #
+    # "Has this been triaged?" is not the same question as "is this the primary
+    # event of an alert". A threshold rule anchors its detection on the last
+    # event of a burst, so the other seven would otherwise look untouched and be
+    # re-evaluated on every run - producing a duplicate brute-force alert each
+    # time. This column records the answer to the question actually being asked.
+    triaged_at: Mapped[datetime | None] = mapped_column(UtcDateTime, index=True)
 
 
 # ---------------------------------------------------------------------------
