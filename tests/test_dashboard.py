@@ -50,8 +50,10 @@ def console_settings(global_db: Settings) -> Settings:
 
 
 @pytest.fixture
-def client(console_settings: Settings) -> TestClient:
-    return TestClient(create_app(console_settings))
+def client(console_settings: Settings) -> Iterator[TestClient]:
+    # As a context manager, so the app's lifespan runs and disposes its engine.
+    with TestClient(create_app(console_settings)) as test_client:
+        yield test_client
 
 
 def _run_pipeline(settings: Settings, events: list[SecurityEvent]) -> None:

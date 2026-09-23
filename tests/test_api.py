@@ -57,7 +57,9 @@ def client(app_settings: Settings) -> Iterator[TestClient]:
     # happening to create it first, and release it afterwards.
     reset_engine()
     initialize_database(get_engine(app_settings))
-    yield TestClient(create_app(app_settings), raise_server_exceptions=True)
+    # As a context manager, so the app's lifespan runs and disposes its engine.
+    with TestClient(create_app(app_settings), raise_server_exceptions=True) as test_client:
+        yield test_client
     reset_engine()
 
 
@@ -346,9 +348,11 @@ def test_severity_method_is_always_deterministic(client: TestClient) -> None:
 # Stage 10 review: a regression test for every defect the review found
 # ---------------------------------------------------------------------------
 @pytest.fixture
-def fresh(global_db: Settings) -> TestClient:
+def fresh(global_db: Settings) -> Iterator[TestClient]:
     """A client over an empty database of its own, rate limiting off."""
-    return TestClient(create_app(global_db.model_copy(update={"api_rate_limit_per_minute": 0})))
+    app = create_app(global_db.model_copy(update={"api_rate_limit_per_minute": 0}))
+    with TestClient(app) as test_client:
+        yield test_client
 
 
 def _batch(fresh_settings: Settings) -> list[Any]:
@@ -406,11 +410,11 @@ def test_the_import_limit_applies_to_the_api(global_db: Settings) -> None:
     limited = global_db.model_copy(
         update={"max_events_per_import": 2, "api_rate_limit_per_minute": 0}
     )
-    client = TestClient(create_app(limited))
     events = [_canonical_event(hostname=f"h{i}") for i in range(5)]
-    body = client.post(
-        "/api/v1/events", json={"source": "canonical", "triage": False, "events": events}
-    ).json()
+    with TestClient(create_app(limited)) as client:
+        body = client.post(
+            "/api/v1/events", json={"source": "canonical", "triage": False, "events": events}
+        ).json()
     assert body["accepted"] == 2
     assert body["rejections"][-1]["reason"] == "limit_exceeded"
 
@@ -483,10 +487,10 @@ def test_an_unsupported_upload_is_415(fresh: TestClient) -> None:
 
 def test_an_oversized_upload_is_413(global_db: Settings) -> None:
     small = global_db.model_copy(update={"max_upload_bytes": 2_048, "api_rate_limit_per_minute": 0})
-    client = TestClient(create_app(small))
-    r = client.post(
-        "/api/v1/events/import", files={"file": ("big.json", b"[" + b" " * 4_000 + b"]")}
-    )
+    with TestClient(create_app(small)) as client:
+        r = client.post(
+            "/api/v1/events/import", files={"file": ("big.json", b"[" + b" " * 4_000 + b"]")}
+        )
     assert r.status_code == 413
 
 
@@ -527,7 +531,7 @@ def test_serve_refuses_a_non_loopback_address_without_expose() -> None:
 def test_each_app_serves_the_database_it_was_given(tmp_path: Any) -> None:
     """The factory's settings used to reach the middleware and nothing else:
     every handler read the process defaults. Two apps, two databases."""
-    apps = []
+    settings_pair = []
     for name in ("a", "b"):
         settings = Settings(
             _env_file=None,
@@ -536,10 +540,13 @@ def test_each_app_serves_the_database_it_was_given(tmp_path: Any) -> None:
         )
         initialize_database(get_engine(settings))
         reset_engine()
-        apps.append(TestClient(create_app(settings)))
-    first, second = apps
+        settings_pair.append(settings)
 
     body = {"source": "canonical", "triage": False, "events": [_canonical_event()]}
-    assert first.post("/api/v1/events", json=body).status_code == 201
-    assert first.get("/api/v1/events").json()["total"] == 1
-    assert second.get("/api/v1/events").json()["total"] == 0
+    with (
+        TestClient(create_app(settings_pair[0])) as first,
+        TestClient(create_app(settings_pair[1])) as second,
+    ):
+        assert first.post("/api/v1/events", json=body).status_code == 201
+        assert first.get("/api/v1/events").json()["total"] == 1
+        assert second.get("/api/v1/events").json()["total"] == 0
