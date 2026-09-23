@@ -185,7 +185,47 @@ sentinelflow incidents                  # investigations
 sentinelflow incident ade0              # one investigation, with its timeline
 ```
 
-Additional commands (`serve`, `report`) arrive with their corresponding stages.
+Run the analyst console and the REST API (one process, one port):
+
+```bash
+sentinelflow serve                      # http://127.0.0.1:8000
+```
+
+The console shows each alert as four layers — **Observed**, **Determined**,
+**Suggested**, **Decided** — so evidence, deterministic analysis, optional AI
+opinion and the human decision can never be confused for one another. See
+[docs/dashboard.md](docs/dashboard.md).
+
+## API
+
+Interactive documentation is served at `/docs` while `SENTINELFLOW_API_DOCS_ENABLED`
+is true (the default for local use).
+
+| Method | Path | Purpose |
+|---|---|---|
+| `GET` | `/api/v1/health` | Liveness and schema version |
+| `GET` | `/api/v1/stats` | Headline counts (shared with the dashboard) |
+| `POST` | `/api/v1/ingest` | Ingest a batch of events in any supported source format |
+| `POST` | `/api/v1/triage` | Run detection, scoring and alert creation on pending events |
+| `POST` | `/api/v1/correlate` | Group related alerts into potential incidents |
+| `GET` | `/api/v1/events`, `/api/v1/events/{id}` | Events |
+| `GET` | `/api/v1/alerts`, `/api/v1/alerts/{id}` | Alerts, with severity factors |
+| `GET` | `/api/v1/incidents`, `/api/v1/incidents/{id}` | Investigations |
+| `GET` | `/api/v1/rules`, `/api/v1/rules/{id}` | Detection rules |
+
+```bash
+curl -s -X POST http://127.0.0.1:8000/api/v1/ingest \
+  -H 'Content-Type: application/json' \
+  -d '{"source": "canonical", "events": [{"timestamp": "2026-09-23T13:42:10Z",
+       "source": "canonical", "event_type": "process_creation",
+       "hostname": "WIN-LAB-01", "process_name": "powershell.exe",
+       "command_line": "powershell.exe -enc IwAgAFMAZQBuAHQAaQBuAGUAbABGAGwAbwB3ACAAZABlAG0AbwAgAHAAYQB5AGwAbwBhAGQAIAAtACAAaABhAHIAbQBsAGUAcwBzAA=="}]}'
+```
+
+The encoded command in that example decodes to a harmless comment, the same
+payload the demo scenario uses.
+
+Report generation (`report`) arrives with Stage 14.
 
 ## Configuration
 
@@ -238,6 +278,7 @@ where the boundaries are.
 | [docs/mitre-attack.md](docs/mitre-attack.md) | How mappings are justified, and what is refused |
 | [docs/severity.md](docs/severity.md) | The scoring factors and why the AI cannot reach them |
 | [docs/correlation.md](docs/correlation.md) | What links alerts, what deliberately does not |
+| [docs/dashboard.md](docs/dashboard.md) | The console's design, and how the CSP shaped it |
 | [docs/roadmap.md](docs/roadmap.md) | Build stages and current status |
 | [SECURITY.md](SECURITY.md) | Threat model and controls |
 

@@ -1,0 +1,63 @@
+{#- Shared fragments. Nothing here marks a value as safe: every string that
+    reaches the page is escaped by Jinja2, including hostnames, usernames and
+    command lines an attacker may have chosen. -#}
+
+{% macro severity(level, score=none) -%}
+{%- set ranks = {'low': 1, 'medium': 2, 'high': 3, 'critical': 4} -%}
+<span class="sev sev--{{ level }}">
+  <span class="pips" aria-hidden="true">{% for i in range(4) %}<span class="pip{% if i < ranks.get(level, 0) %} is-on{% endif %}"></span>{% endfor %}</span>
+  <span class="sev-label">{{ level }}</span>{% if score is not none %}<span class="sev-score">{{ score }}</span>{% endif %}
+</span>
+{%- endmacro %}
+
+{% macro status(value) -%}
+{#- Status is carried by a glyph shape and a word, never by colour alone. -#}
+{%- set glyphs = {'new': '●', 'investigating': '◐', 'escalated': '▲', 'benign': '○', 'closed': '✓'} -%}
+<span class="status status--{{ value }}"><span class="status-glyph" aria-hidden="true">{{ glyphs.get(value, '·') }}</span>{{ value }}</span>
+{%- endmacro %}
+
+{% macro empty(title, body) -%}
+<div class="empty">
+  <p class="empty-title">{{ title }}</p>
+  <p class="empty-body">{{ body }}</p>
+</div>
+{%- endmacro %}
+
+{% macro bars(rows, caption, value_label, link_prefix=none) -%}
+{%- if rows|length == 1 -%}
+{#- One value is a stat, not a chart: a bar measured against itself says
+    nothing. The form follows the data. -#}
+{%- set only = rows[0] -%}
+<div class="solo">
+  <p class="solo-value">{{ only.value }}</p>
+  <p class="solo-text">{{ value_label }}, all on <span class="mono">{{ only.label }}</span>{% if only.sublabel %} — {{ only.sublabel }}{% endif %}</p>
+</div>
+{%- elif rows -%}
+<ol class="barlist">
+  {% for row in rows %}
+  <li class="barlist-row" data-tip="{{ row.label }}" data-tip-value="{{ row.value }} {{ value_label }}"{% if row.sublabel %} data-tip-note="{{ row.sublabel }}"{% endif %} tabindex="0">
+    <span class="barlist-label">
+      {%- if link_prefix %}<a href="{{ link_prefix }}{{ row.label }}">{{ row.label }}</a>{% else %}<span class="mono">{{ row.label }}</span>{% endif -%}
+      {%- if row.sublabel %}<span class="barlist-sub">{{ row.sublabel }}</span>{% endif -%}
+    </span>
+    <svg class="barlist-track" width="100%" height="10" aria-hidden="true">
+      <rect class="bar-rail" x="0" y="4" width="100%" height="2" rx="1"/>
+      {#- Rounded data-end, square at the baseline: a rounded rect for the end,
+          and a square rect over its first 4px so the base stays flat. -#}
+      <rect class="bar" x="0" y="0" width="{{ row.percent }}%" height="10" rx="4"/>
+      <rect class="bar" x="0" y="0" width="{% if row.percent > 1.5 %}4{% else %}0{% endif %}" height="10"/>
+    </svg>
+    <span class="barlist-value">{{ row.value }}</span>
+  </li>
+  {% endfor %}
+</ol>
+<details class="tableview">
+  <summary>Table view</summary>
+  <table>
+    <caption class="sr-only">{{ caption }}</caption>
+    <thead><tr><th scope="col">Name</th><th scope="col" class="num">{{ value_label|capitalize }}</th></tr></thead>
+    <tbody>{% for row in rows %}<tr><td>{{ row.label }}{% if row.sublabel %} — {{ row.sublabel }}{% endif %}</td><td class="num">{{ row.value }}</td></tr>{% endfor %}</tbody>
+  </table>
+</details>
+{%- endif -%}
+{%- endmacro %}

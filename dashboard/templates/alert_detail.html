@@ -1,0 +1,260 @@
+{% extends "base.html" %}
+{% from "_macros.html" import severity, status %}
+{% block title %}{{ alert.title }}{% endblock %}
+{% block content %}
+<header class="page-head page-head--alert rise rise-1">
+  <div>
+    <p class="eyebrow"><a href="/alerts">Alerts</a> <span aria-hidden="true">/</span> <span class="mono">{{ alert.alert_id|string|truncate(8, true, '') }}</span></p>
+    <h1>{{ alert.title }}</h1>
+    <ul class="meta">
+      <li>{{ severity(alert.severity_level.value, alert.severity.score) }}</li>
+      <li>{{ status(alert.status.value) }}</li>
+      <li class="meta-item"><span class="label">Confidence</span> {{ alert.confidence.value }}</li>
+      {% if incident %}<li class="meta-item"><span class="label">Part of</span> <a href="/incidents/{{ incident.incident_id }}">{{ incident.display_label }}</a></li>{% endif %}
+      <li class="meta-item"><span class="label">Raised</span> <span class="mono">{{ alert.created_at|ts('%Y-%m-%d %H:%M') }} UTC</span></li>
+    </ul>
+  </div>
+</header>
+
+{#- The strata of trust. Each layer is shown in the order its trust was
+    established, and labelled with what kind of claim it is. The model's layer
+    sits apart, and nothing in it can reach the layers above. -#}
+<div class="strata">
+
+  {# ------------------------------------------------------------------ 01 #}
+  <section class="stratum stratum--observed rise rise-2" aria-labelledby="s-observed">
+    <header class="stratum-rail">
+      <p class="stratum-index">01</p>
+      <h2 id="s-observed" class="stratum-name">Observed</h2>
+      <p class="stratum-claim">What the source recorded, verbatim.</p>
+    </header>
+    <div class="stratum-body">
+      {% if event %}
+      <dl class="facts">
+        <div><dt>Event time</dt><dd class="mono">{{ event.timestamp|ts }} UTC</dd></div>
+        <div><dt>Source</dt><dd class="mono">{{ event.source }}</dd></div>
+        <div><dt>Type</dt><dd><span class="mono">{{ event.event_type.value }}</span>{% if event.event_type_raw %} <span class="muted mono">({{ event.event_type_raw }})</span>{% endif %}</dd></div>
+        {% if event.hostname %}<div><dt>Host</dt><dd class="mono">{{ event.hostname }}</dd></div>{% endif %}
+        {% if event.username %}<div><dt>Account</dt><dd class="mono">{{ event.username }}</dd></div>{% endif %}
+        {% if event.process_name %}<div><dt>Process</dt><dd class="mono">{{ event.process_name }}{% if event.process_id %} <span class="muted">pid {{ event.process_id }}</span>{% endif %}</dd></div>{% endif %}
+        {% if event.parent_process %}<div><dt>Parent</dt><dd class="mono">{{ event.parent_process }}</dd></div>{% endif %}
+        {% if event.src_ip %}<div><dt>Source address</dt><dd class="mono">{{ event.src_ip }}{% if event.src_port %}:{{ event.src_port }}{% endif %}</dd></div>{% endif %}
+        {% if event.dst_ip %}<div><dt>Destination</dt><dd class="mono">{{ event.dst_ip }}{% if event.dst_port %}:{{ event.dst_port }}{% endif %}</dd></div>{% endif %}
+        {% if event.domain %}<div><dt>Domain</dt><dd class="mono">{{ event.domain }}</dd></div>{% endif %}
+        {% if event.url %}<div><dt>URL</dt><dd class="mono break">{{ event.url }}</dd></div>{% endif %}
+        {% if event.file_path %}<div><dt>File</dt><dd class="mono break">{{ event.file_path }}</dd></div>{% endif %}
+        {% if event.file_hash %}<div><dt>Hash</dt><dd class="mono break">{{ event.file_hash }}</dd></div>{% endif %}
+        {% if event.event_message %}<div><dt>Message</dt><dd>{{ event.event_message }}</dd></div>{% endif %}
+      </dl>
+      {% if event.command_line %}
+      <p class="label">Command line</p>
+      <pre class="evidence">{{ event.command_line }}</pre>
+      {% endif %}
+      {% if event.source_severity or event.source_confidence %}
+      <p class="claim-note">
+        <span class="label">Claimed by the source</span>
+        {% if event.source_severity %}severity {{ event.source_severity.value }}{% endif %}
+        {% if event.source_confidence %}· confidence {{ event.source_confidence.value }}{% endif %}
+        — a hint the source supplied, never the verdict.
+      </p>
+      {% endif %}
+      <details class="raw">
+        <summary>Original record as received</summary>
+        <pre class="evidence">{{ event.raw_event|pretty_json }}</pre>
+      </details>
+      {% else %}
+      <p class="muted">The event behind this alert is no longer stored.</p>
+      {% endif %}
+    </div>
+  </section>
+
+  {# ------------------------------------------------------------------ 02 #}
+  <section class="stratum stratum--determined rise rise-3" aria-labelledby="s-determined">
+    <header class="stratum-rail">
+      <p class="stratum-index">02</p>
+      <h2 id="s-determined" class="stratum-name">Determined</h2>
+      <p class="stratum-claim">Reproducible. The same event always gives this result.</p>
+    </header>
+    <div class="stratum-body">
+
+      <h3>How the severity was calculated</h3>
+      <svg class="track" viewBox="0 0 {{ track.width }} {{ track.height }}" role="img"
+           aria-label="Score {{ track.score }} of 100, {{ track.level.value }}. Factors are listed in the table below.">
+        {% for x, width, label in track.bands %}
+        <text class="band-label" x="{{ x + 2 }}" y="14">{{ label }}</text>
+        {% endfor %}
+        <rect class="track-rail" x="{{ track.track_x }}" y="{{ track.track_y }}" width="{{ track.track_width }}" height="{{ track.track_height }}" rx="4"/>
+        {#- Band edges sit behind the segments and show only above and below
+            the bar, so a band boundary is never mistaken for a factor gap. -#}
+        {% for x in track.band_edges %}
+        <line class="band-edge" x1="{{ x }}" x2="{{ x }}" y1="{{ track.track_y - 4 }}" y2="{{ track.track_y + track.track_height + 4 }}"/>
+        {% endfor %}
+        {% for seg in track.positive %}
+        <path class="track-seg track-seg--{{ track.level.value }}" d="{{ seg.path }}" tabindex="0"
+              data-tip="{{ seg.name|humanise }}" data-tip-value="{{ '%+d'|format(seg.points) }}" data-tip-note="{{ seg.detail }}"/>
+        {% endfor %}
+        {% for seg in track.deductions %}
+        <path class="track-ded" d="{{ seg.path }}" tabindex="0"
+              data-tip="{{ seg.name|humanise }}" data-tip-value="{{ '%+d'|format(seg.points) }}" data-tip-note="{{ seg.detail }}"/>
+        {% endfor %}
+        <line class="score-mark" x1="{{ track.score_x }}" x2="{{ track.score_x }}" y1="{{ track.track_y - 6 }}" y2="{{ track.track_y + track.track_height + 6 }}"/>
+        <text class="score-label" x="{{ track.score_x }}" y="{{ track.track_y + track.track_height + 18 }}" text-anchor="middle">{{ track.score }}</text>
+      </svg>
+      <table class="factors">
+        <caption class="sr-only">Severity factors</caption>
+        <tbody>
+          {% for factor in alert.severity.factors %}
+          <tr>
+            <td class="num factor-points {% if factor.points < 0 %}is-negative{% endif %}">{{ '%+d'|format(factor.points) }}</td>
+            <th scope="row" class="mono">{{ factor.name }}</th>
+            <td>{{ factor.detail }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+        <tfoot>
+          <tr>
+            <td class="num factor-points">{{ alert.severity.score }}</td>
+            <th scope="row">Total{% if track.clamped %} <span class="muted">(clamped to 0–100)</span>{% endif %}</th>
+            <td>{{ severity(alert.severity_level.value) }} <span class="muted">· method: {{ alert.severity.method }}</span></td>
+          </tr>
+        </tfoot>
+      </table>
+
+      <h3>Why it fired</h3>
+      <ul class="detections">
+        {% for detection in alert.detections %}
+        <li class="detection">
+          <p class="detection-head">
+            {{ severity(detection.rule_severity.value) }}
+            <span class="mono detection-id">{{ detection.rule_id }}</span>
+            <span class="detection-name">{{ detection.rule_name }}</span>
+          </p>
+          <p class="detection-desc">{{ detection.description }}</p>
+          {% if detection.matched %}
+          <table class="evidence-table">
+            <caption class="sr-only">Conditions that matched</caption>
+            <thead><tr><th scope="col">Field</th><th scope="col">Condition</th><th scope="col">Observed value</th></tr></thead>
+            <tbody>
+              {% for match in detection.matched %}
+              <tr><td class="mono">{{ match.field_name }}</td><td>{{ match.condition }}</td><td class="mono break">{{ match.observed_value or '-' }}</td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+          {% endif %}
+        </li>
+        {% endfor %}
+      </ul>
+
+      {% if alert.mitre %}
+      <h3>MITRE ATT&amp;CK</h3>
+      <ul class="mappings">
+        {% for mapping in alert.mitre %}
+        <li class="mapping">
+          <p class="mapping-head">
+            <a class="mono" href="{{ mapping.technique.url }}" rel="noopener noreferrer" target="_blank">{{ mapping.technique_id }}</a>
+            <span>{{ mapping.technique.name }}</span>
+            <span class="muted">{{ mapping.technique.tactics|join(' · ') }}</span>
+          </p>
+          <p class="mapping-reason"><span class="label">Reason</span> {{ mapping.reason }}</p>
+        </li>
+        {% endfor %}
+      </ul>
+      {% endif %}
+
+      {% if alert.indicators %}
+      <h3>Indicators <span class="muted">— facts about strings, not verdicts</span></h3>
+      <div class="table-wrap">
+        <table class="indicators">
+          <thead><tr><th scope="col">Type</th><th scope="col">Value</th><th scope="col">Seen in</th><th scope="col">Context</th></tr></thead>
+          <tbody>
+            {% for indicator in alert.indicators %}
+            <tr>
+              <td class="mono">{{ indicator.indicator_type.value }}</td>
+              <td class="mono break">{{ indicator.value }}</td>
+              <td class="mono">{{ indicator.source_field or '-' }}</td>
+              <td class="muted">{% if indicator.is_internal %}internal{% elif indicator.is_documentation %}documentation range{% else %}—{% endif %}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% endif %}
+
+      {% if recommendations %}
+      <h3>Recommended next steps</h3>
+      <ol class="steps">
+        {% for rule_id, text in recommendations %}
+        <li><span class="mono muted">{{ rule_id }}</span> {{ text }}</li>
+        {% endfor %}
+      </ol>
+      {% endif %}
+    </div>
+  </section>
+
+  {# ------------------------------------------------------------------ 03 #}
+  <section class="stratum stratum--suggested rise rise-4" aria-labelledby="s-suggested">
+    <header class="stratum-rail">
+      <p class="stratum-index">03</p>
+      <h2 id="s-suggested" class="stratum-name">Suggested</h2>
+      <p class="stratum-claim">Advisory only. Cannot change anything above.</p>
+    </header>
+    <div class="stratum-body">
+      {% if analyses %}
+      {% set analysis = analyses[0] %}
+      <p class="advisory-stamp">AI suggestion · not authoritative</p>
+      <p class="muted small">{{ ai_disclaimer }}</p>
+      <p class="mono muted small">{{ analysis.provider }} / {{ analysis.model }} · {{ analysis.generated_at|ts('%Y-%m-%d %H:%M') }} UTC</p>
+      {% if analysis.injection_suspected %}
+      <p class="warning-note" role="note"><strong>Possible prompt injection.</strong> The evidence contained text that looked like instructions to the model. Treat this analysis with extra suspicion.</p>
+      {% endif %}
+      <p>{{ analysis.summary }}</p>
+      {% if analysis.suggested_severity %}
+      <div class="compare">
+        <p><span class="label">Deterministic severity</span> {{ severity(alert.severity_level.value, alert.severity.score) }}</p>
+        <p><span class="label">AI suggestion</span> <span class="suggestion">{{ analysis.suggested_severity.value }}</span>
+          {% if analysis.suggested_severity_rationale %}<span class="muted small">— {{ analysis.suggested_severity_rationale }}</span>{% endif %}</p>
+      </div>
+      {% endif %}
+      {% for kind, items in [('Observed', analysis.observed), ('Inferred', analysis.inferred), ('Unknown', analysis.unknown)] if items %}
+      <p class="label">{{ kind }}</p>
+      <ul class="statements statements--{{ kind|lower }}">{% for s in items %}<li>{{ s.text }}</li>{% endfor %}</ul>
+      {% endfor %}
+      {% if analysis.analyst_questions %}
+      <p class="label">Questions for the analyst</p>
+      <ul class="statements">{% for q in analysis.analyst_questions %}<li>{{ q }}</li>{% endfor %}</ul>
+      {% endif %}
+      {% else %}
+      <p class="quiet-state">
+        {% if ai_enabled %}No analysis has been requested for this alert.{% else %}AI is off. Everything above is complete without it — the model is an optional assistant, not a dependency.{% endif %}
+      </p>
+      {% endif %}
+    </div>
+  </section>
+
+  {# ------------------------------------------------------------------ 04 #}
+  <section class="stratum stratum--decided rise rise-5" aria-labelledby="s-decided">
+    <header class="stratum-rail">
+      <p class="stratum-index">04</p>
+      <h2 id="s-decided" class="stratum-name">Decided</h2>
+      <p class="stratum-claim">The only layer that can close this alert.</p>
+    </header>
+    <div class="stratum-body">
+      <dl class="facts facts--compact">
+        <div><dt>Status</dt><dd>{{ status(alert.status.value) }}</dd></div>
+        <div><dt>Classification</dt><dd>{{ alert.classification.value|humanise if alert.classification else 'Not yet classified' }}</dd></div>
+        <div><dt>Assigned to</dt><dd>{{ alert.assigned_to or 'Unassigned' }}</dd></div>
+        {% if alert.closed_at %}<div><dt>Closed</dt><dd class="mono">{{ alert.closed_at|ts }} UTC</dd></div>{% endif %}
+      </dl>
+      {% if notes %}
+      <ol class="notes">
+        {% for note in notes %}
+        <li class="note"><p class="note-meta"><span>{{ note.author }}</span> <span class="mono muted">{{ note.created_at|ts('%Y-%m-%d %H:%M') }} UTC</span></p><p>{{ note.body }}</p></li>
+        {% endfor %}
+      </ol>
+      {% else %}
+      <p class="quiet-state">No analyst decision recorded yet.</p>
+      {% endif %}
+    </div>
+  </section>
+</div>
+{% endblock %}

@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+{% block title %}Not found{% endblock %}
+{% block content %}
+<section class="card notfound rise rise-1">
+  <p class="eyebrow">404</p>
+  <h1>No such {{ what }}</h1>
+  <p class="lede">It may have been removed, or the link is incomplete.</p>
+  <p><a href="/">Back to the overview</a></p>
+</section>
+{% endblock %}

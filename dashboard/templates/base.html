@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark light">
+  <meta name="referrer" content="no-referrer">
+  <title>{% block title %}{% endblock %} · SentinelFlow</title>
+  <link rel="icon" href="{{ url_for('static', path='favicon.svg') }}" type="image/svg+xml">
+  <link rel="stylesheet" href="{{ url_for('static', path='console.css') }}">
+  {#- One static script, deferred. The CSP forbids inline script, so nothing
+      on any page can run unless it is this file. -#}
+  <script src="{{ url_for('static', path='console.js') }}" defer></script>
+</head>
+<body>
+  <a class="skip" href="#main">Skip to content</a>
+  <div class="shell">
+    <nav class="rail" aria-label="Primary">
+      <a class="brand" href="/">
+        <svg class="brand-mark" viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">
+          <path d="M12 2 3 6v6c0 5 3.8 8.6 9 10 5.2-1.4 9-5 9-10V6z" fill="none" stroke="currentColor" stroke-width="1.6"/>
+          <path d="M7 12.5h3l1.4-3 2.2 6 1.4-3H17" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        <span class="brand-name">SentinelFlow</span>
+      </a>
+      <ul class="rail-nav">
+        {% for key, href, label in nav %}
+        <li><a href="{{ href }}"{% if active == key %} class="is-active" aria-current="page"{% endif %}>{{ label }}</a></li>
+        {% endfor %}
+      </ul>
+      <div class="rail-foot">
+        <p class="posture {% if ai_enabled %}posture--ai{% endif %}">
+          {% if ai_enabled %}AI advisory enabled{% else %}AI off · deterministic only{% endif %}
+        </p>
+        <p class="label">v{{ version }} · local</p>
+      </div>
+    </nav>
+    <main id="main" class="main">
+      {% block content %}{% endblock %}
+    </main>
+  </div>
+  <div class="tip" role="tooltip" hidden></div>
+</body>
+</html>

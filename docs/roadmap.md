@@ -28,8 +28,8 @@ Legend: **Done** · *In progress* · Planned
 
 | Stage | Scope | Status |
 |---|---|---|
-| 10 | FastAPI REST API | Planned |
-| 11 | SOC dashboard (overview + alert detail) | Planned |
+| 10 | FastAPI REST API | **Done** |
+| 11 | SOC dashboard (overview + alert detail) | **Done** |
 | 12 | Optional Ollama AI provider with injection defences | Planned |
 | 13 | Analyst workflow: status, classification, notes, audit | Planned |
 | 14 | Investigation report generation (Markdown / HTML) | Planned |
@@ -202,3 +202,36 @@ Legend: **Done** · *In progress* · Planned
   `demo` now runs ingestion, triage and correlation end to end
 * `docs/correlation.md`
 * 32 new tests
+
+## Stage 10 - delivered
+
+* FastAPI application factory (`app/api/app.py`) serving thirteen endpoints
+  under `/api/v1`: health, stats, ingest, triage, correlate, and list/detail
+  for events, alerts, incidents and rules
+* API contract models (`app/api/schemas.py`) kept separate from the domain
+  models, with severity always returned together with its factors and method
+* Request middleware: request IDs, body-size limit enforced while streaming
+  (not only via Content-Length), a coarse per-client rate limit, and strict
+  security headers including the Content-Security-Policy
+* Error handlers that log detail and return a request ID rather than a stack
+  trace
+
+## Stage 11 - delivered
+
+* `app/web/` - a server-rendered console on the same app: overview, alert
+  queue, alert detail, investigations and rules
+* The alert page as **strata of trust**: Observed, Determined, Suggested,
+  Decided - the project's separation of evidence and interpretation made
+  visible, with the AI layer hatched and labelled as advisory
+* `app/web/charts.py` - SVG geometry computed in Python so the CSP never needs
+  relaxing, and so chart arithmetic is unit-tested
+* An emphasis trend chart instead of a four-colour severity stack, after the
+  latter failed colour-vision validation; the chosen pair validated in both
+  themes
+* `app/services/dashboard.py` - one stats builder shared by the page and
+  `GET /api/v1/stats`, which fixed the endpoint's previously empty `top_rules`
+* Tests that push `<script>` and attribute-breakout payloads through real
+  ingestion into the rendered pages, and that audit templates and rendered
+  HTML for anything the CSP would block
+* `docs/dashboard.md`
+* 72 new tests

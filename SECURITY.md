@@ -16,7 +16,7 @@ content of an ingested event**, and who wants to:
 | Attacker goal | Control in SentinelFlow |
 |---|---|
 | Execute SQL through an event field | All database access goes through SQLAlchemy with bound parameters. No string-built SQL. |
-| Inject script into the analyst's browser | Jinja2 autoescaping is on everywhere; raw event data is never rendered as HTML. |
+| Inject script into the analyst's browser | Jinja2 autoescaping is asserted on, and no template or filter marks a value safe. Behind it, a Content-Security-Policy of `'self'` with no inline script or style means an injected script would have nowhere to run. Tests push `<script>` and attribute-breakout payloads through real ingestion into the rendered pages, and audit every template and rendered page for anything the policy would block. |
 | Forge or flood log entries | Newlines are escaped and control characters stripped before logging; messages are truncated. See `app/core/logging.py`. |
 | Leak credentials into logs | A redaction filter rewrites password/token/key-like values on every log record. |
 | Override the AI's instructions (prompt injection) | Event data is passed to the model inside explicit untrusted-evidence delimiters, never concatenated into the system prompt, and the model's output is schema-validated before storage. The AI output can never change an alert's official severity. |

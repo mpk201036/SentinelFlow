@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% from "_macros.html" import severity, empty %}
+{% block title %}Investigations{% endblock %}
+{% block content %}
+<header class="page-head rise rise-1">
+  <div>
+    <p class="eyebrow">Correlation</p>
+    <h1>Investigations</h1>
+    <p class="lede">Related alerts grouped by shared host, account, address, process chain or indicator. SentinelFlow proposes the grouping; only an analyst confirms a compromise.</p>
+  </div>
+</header>
+<section class="incident-list rise rise-2">
+  {% for incident in incidents %}
+  <a class="incident-card" href="/incidents/{{ incident.incident_id }}">
+    <p class="incident-state">{{ incident.display_label }}</p>
+    <h2 class="incident-title">{{ incident.title }}</h2>
+    <p class="incident-meta">
+      {{ severity(incident.severity.value) }}
+      <span>{{ incident.alert_count }} alerts</span>
+      {% if incident.hostnames %}<span class="mono">{{ incident.hostnames|join(', ') }}</span>{% endif %}
+      {% if incident.first_event_at %}<span class="mono muted">{{ incident.first_event_at|ts('%Y-%m-%d %H:%M') }}–{{ incident.last_event_at|ts('%H:%M') }} UTC</span>{% endif %}
+    </p>
+  </a>
+  {% else %}
+  <div class="card">{{ empty("No investigations yet", "Correlation groups related alerts once there are at least two. Run  sentinelflow correlate  after triage.") }}</div>
+  {% endfor %}
+</section>
+{% endblock %}

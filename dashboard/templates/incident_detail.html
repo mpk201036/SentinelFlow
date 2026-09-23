@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+{% from "_macros.html" import severity, status %}
+{% block title %}{{ incident.title }}{% endblock %}
+{% block content %}
+<header class="page-head rise rise-1">
+  <div>
+    <p class="eyebrow"><a href="/incidents">Investigations</a> <span aria-hidden="true">/</span> <span class="mono">{{ incident.incident_id|string|truncate(8, true, '') }}</span></p>
+    <h1>{{ incident.title }}</h1>
+    <ul class="meta">
+      <li><span class="incident-state incident-state--inline">{{ incident.display_label }}</span></li>
+      <li>{{ severity(incident.severity.value) }} <span class="muted small">highest member</span></li>
+      <li class="meta-item"><span class="label">Alerts</span> {{ incident.alert_count }}</li>
+      {% if incident.hostnames %}<li class="meta-item"><span class="label">Hosts</span> <span class="mono">{{ incident.hostnames|join(', ') }}</span></li>{% endif %}
+      {% if incident.usernames %}<li class="meta-item"><span class="label">Accounts</span> <span class="mono">{{ incident.usernames|join(', ') }}</span></li>{% endif %}
+    </ul>
+  </div>
+</header>
+
+{% if potential %}
+<p class="banner rise rise-2" role="note">
+  <strong>Potential incident.</strong> These alerts were grouped automatically because they share concrete evidence. No compromise is asserted — that is an analyst's call.
+</p>
+{% endif %}
+
+<div class="grid">
+  <section class="card span-8 rise rise-3" aria-labelledby="tl-head">
+    <header class="card-head"><div><h2 id="tl-head">Timeline</h2><p class="card-sub">Member alerts in event-time order</p></div></header>
+    <ol class="timeline">
+      {% for event, alert in timeline %}
+      <li class="timeline-item timeline-item--{{ alert.severity_level.value }}">
+        <p class="timeline-time mono">{{ event.timestamp|ts('%H:%M:%S') }}</p>
+        <div class="timeline-body">
+          <p class="timeline-head">
+            {{ severity(alert.severity_level.value, alert.severity.score) }}
+            <a href="/alerts/{{ alert.alert_id }}">{{ alert.title }}</a>
+          </p>
+          <p class="timeline-desc mono muted">{{ event.describe() }}</p>
+        </div>
+      </li>
+      {% endfor %}
+    </ol>
+  </section>
+
+  <aside class="span-4 stack rise rise-4">
+    <section class="card" aria-labelledby="why-head">
+      <header class="card-head"><div><h2 id="why-head">Why these are grouped</h2></div></header>
+      <ul class="reasons">{% for reason in incident.correlation_reasons %}<li>{{ reason }}</li>{% endfor %}</ul>
+      <p class="muted small">Correlation key <span class="mono">{{ incident.correlation_key }}</span></p>
+    </section>
+    {% if techniques %}
+    <section class="card" aria-labelledby="tt-head">
+      <header class="card-head"><div><h2 id="tt-head">ATT&amp;CK techniques</h2></div></header>
+      <ul class="technique-list">
+        {% for t in techniques %}
+        <li><a class="mono" href="{{ t.url }}" rel="noopener noreferrer" target="_blank">{{ t.technique_id }}</a> {{ t.name }}<span class="muted small"> · {{ t.tactics|join(', ') }}</span></li>
+        {% endfor %}
+      </ul>
+    </section>
+    {% endif %}
+    {% if incident.summary %}
+    <section class="card"><p class="muted small">{{ incident.summary }}</p></section>
+    {% endif %}
+  </aside>
+</div>
+{% endblock %}

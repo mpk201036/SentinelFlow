@@ -28,12 +28,14 @@ from app.database.tables import (
     AlertRow,
     AnalystNoteRow,
     AuditLogRow,
+    DetectionRow,
     DetectionRuleRow,
     EventIndicatorRow,
     EventRow,
     ImportBatchRow,
     IncidentRow,
     IndicatorRow,
+    MitreMappingRow,
     MitreTechniqueRow,
     RejectedEventRow,
 )
@@ -697,6 +699,106 @@ def list_batches(session: Session, *, limit: int = 50) -> list[ImportBatchRow]:
             select(ImportBatchRow).order_by(ImportBatchRow.imported_at.desc()).limit(limit)
         ).all()
     )
+
+
+# ---------------------------------------------------------------------------
+# Dashboard aggregates
+#
+# Every aggregate here filters on the *event* time behind each alert, never on
+# when the alert row was written. An export imported this afternoon describes
+# activity from whenever it happened, and a "last 24 hours" view built on row
+# time would show a week of old activity as a spike at 3pm.
+# ---------------------------------------------------------------------------
+def _alerts_in_window(since: datetime | None) -> sa.Select[Any]:
+    """Alert ids whose underlying event happened at or after ``since``."""
+    query = select(AlertRow.alert_id).join(EventRow, EventRow.event_id == AlertRow.primary_event_id)
+    if since is not None:
+        query = query.where(EventRow.timestamp >= since)
+    return query
+
+
+def alert_counts(session: Session, *, since: datetime | None = None) -> dict[str, dict[str, int]]:
+    """Alert totals by severity and by status, within the window."""
+    window = _alerts_in_window(since)
+    by_severity = session.execute(
+        select(AlertRow.severity_level, func.count())
+        .where(AlertRow.alert_id.in_(window))
+        .group_by(AlertRow.severity_level)
+    ).all()
+    by_status = session.execute(
+        select(AlertRow.status, func.count())
+        .where(AlertRow.alert_id.in_(window))
+        .group_by(AlertRow.status)
+    ).all()
+    return {
+        "severity": {str(level.value): int(count) for level, count in by_severity},
+        "status": {str(state.value): int(count) for state, count in by_status},
+    }
+
+
+def top_alert_hosts(
+    session: Session, *, since: datetime | None = None, limit: int = 8
+) -> list[tuple[str, int]]:
+    """Hosts with the most alerts, by the host named on the underlying event."""
+    rows = session.execute(
+        select(EventRow.hostname, func.count(AlertRow.alert_id))
+        .join(AlertRow, AlertRow.primary_event_id == EventRow.event_id)
+        .where(EventRow.hostname.is_not(None))
+        .where(AlertRow.alert_id.in_(_alerts_in_window(since)))
+        .group_by(EventRow.hostname_key, EventRow.hostname)
+        .order_by(func.count(AlertRow.alert_id).desc(), EventRow.hostname)
+        .limit(limit)
+    ).all()
+    return [(str(host), int(count)) for host, count in rows]
+
+
+def top_alert_rules(
+    session: Session, *, since: datetime | None = None, limit: int = 8
+) -> list[tuple[str, str, int]]:
+    """Rules that fired most often: (rule_id, rule_name, detections)."""
+    rows = session.execute(
+        select(DetectionRow.rule_id, DetectionRow.rule_name, func.count())
+        .where(DetectionRow.alert_id.in_(_alerts_in_window(since)))
+        .group_by(DetectionRow.rule_id, DetectionRow.rule_name)
+        .order_by(func.count().desc(), DetectionRow.rule_id)
+        .limit(limit)
+    ).all()
+    return [(str(rule_id), str(name), int(count)) for rule_id, name, count in rows]
+
+
+def alert_event_times(
+    session: Session, *, since: datetime | None = None, limit: int = 10_000
+) -> list[tuple[datetime, Severity]]:
+    """When each alert's activity happened, with its severity, for the trend."""
+    rows = session.execute(
+        select(EventRow.timestamp, AlertRow.severity_level)
+        .join(AlertRow, AlertRow.primary_event_id == EventRow.event_id)
+        .where(AlertRow.alert_id.in_(_alerts_in_window(since)))
+        .order_by(EventRow.timestamp.asc())
+        .limit(limit)
+    ).all()
+    return [(moment, level) for moment, level in rows]
+
+
+def observed_techniques(
+    session: Session, *, since: datetime | None = None
+) -> list[tuple[str, int]]:
+    """ATT&CK techniques attached to alerts in the window, with alert counts.
+
+    Read from the mappings table, not from what rules declared, so a technique
+    the catalogue could not name - and therefore refused to map - never appears.
+    """
+    rows = session.execute(
+        select(MitreMappingRow.technique_id, func.count(sa.distinct(MitreMappingRow.alert_id)))
+        .where(MitreMappingRow.alert_id.in_(_alerts_in_window(since)))
+        .group_by(MitreMappingRow.technique_id)
+        .order_by(func.count(sa.distinct(MitreMappingRow.alert_id)).desc())
+    ).all()
+    return [(str(technique), int(count)) for technique, count in rows]
+
+
+def count_rejections(session: Session) -> int:
+    return int(session.scalar(select(func.count()).select_from(RejectedEventRow)) or 0)
 
 
 def _now() -> datetime:

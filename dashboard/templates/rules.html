@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% from "_macros.html" import severity %}
+{% block title %}Rules{% endblock %}
+{% block content %}
+<header class="page-head rise rise-1">
+  <div>
+    <p class="eyebrow">Detection content</p>
+    <h1>Rules</h1>
+    <p class="lede">{{ rules|length }} rules loaded from <span class="mono">rules/*.yaml</span>. Rules are data: adding one needs no code change, and every field and pattern is validated when it loads.</p>
+  </div>
+</header>
+{% if errors %}
+<section class="banner banner--warn rise rise-2" role="alert">
+  <strong>{{ errors|length }} rule file(s) failed to load.</strong>
+  <ul>{% for error in errors %}<li><span class="mono">{{ error.path }}</span> — {{ error.message }}</li>{% endfor %}</ul>
+</section>
+{% endif %}
+<section class="card rise rise-3">
+  <div class="table-wrap">
+    <table class="queue rules-table">
+      <thead>
+        <tr><th scope="col">Rule</th><th scope="col">Severity</th><th scope="col">Kind</th><th scope="col">ATT&amp;CK</th><th scope="col" class="num">Fired</th></tr>
+      </thead>
+      <tbody>
+        {% for rule in rules %}
+        <tr{% if not rule.enabled %} class="is-disabled"{% endif %}>
+          <td>
+            <p><span class="mono">{{ rule.rule_id }}</span> {{ rule.name }}{% if not rule.enabled %} <span class="tag">disabled</span>{% endif %}</p>
+            <details class="rule-more">
+              <summary>Description, false positives and next step</summary>
+              <p>{{ rule.description }}</p>
+              {% if rule.false_positives %}<p class="label">Known false positives</p><ul>{% for fp in rule.false_positives %}<li>{{ fp }}</li>{% endfor %}</ul>{% endif %}
+              {% if rule.recommendation %}<p class="label">Recommended next step</p><p>{{ rule.recommendation }}</p>{% endif %}
+            </details>
+          </td>
+          <td>{{ severity(rule.severity.value) }}</td>
+          <td class="mono muted">{{ rule.kind }}</td>
+          <td class="mono">{{ rule.mitre|join(', ') if rule.mitre else '—' }}</td>
+          <td class="num">{{ fired.get(rule.rule_id, 0) }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}

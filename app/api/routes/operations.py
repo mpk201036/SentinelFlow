@@ -46,67 +46,23 @@ def health(settings: SettingsDep, session: SessionDep) -> schemas.HealthResponse
 
 
 @router.get("/stats", response_model=schemas.StatsResponse)
-def stats(session: SessionDep) -> schemas.StatsResponse:
-    from sqlalchemy import func, select
+def stats(session: SessionDep, catalogue: CatalogueDep) -> schemas.StatsResponse:
+    """Headline counts. Shares its builder with the dashboard, so they agree."""
+    from app.services.dashboard import collect_dashboard_stats
 
-    from app.database.tables import AlertRow, DetectionRow, EventRow, RejectedEventRow
-    from app.models.enums import AlertStatus
-
-    events = repository.count_events(session)
-    alerts_total = repository.count_alerts(session)
-    open_statuses = [s for s in AlertStatus if s.is_open]
-    alerts_open = int(
-        session.scalar(
-            select(func.count()).select_from(AlertRow).where(AlertRow.status.in_(open_statuses))
-        )
-        or 0
-    )
-    incidents = repository.count_incidents(session)
-    indicators = repository.count_indicators(session)
-    rejected = int(session.scalar(select(func.count()).select_from(RejectedEventRow)) or 0)
-
-    severity_counts = repository.severity_breakdown(session)
-
-    status_rows = session.execute(
-        select(AlertRow.status, func.count()).group_by(AlertRow.status)
-    ).all()
-    status_counts = {str(s.value): int(c) for s, c in status_rows}
-
-    top_hosts: dict[str, int] = {}
-    host_rows = session.execute(
-        select(EventRow.hostname_key, func.count())
-        .join(AlertRow, AlertRow.primary_event_id == EventRow.event_id)
-        .where(EventRow.hostname_key.isnot(None))
-        .group_by(EventRow.hostname_key)
-        .order_by(func.count().desc())
-        .limit(10)
-    ).all()
-    for host, count in host_rows:
-        if host:
-            top_hosts[host] = int(count)
-
-    techniques_rows = session.execute(
-        select(DetectionRow.mitre_technique_ids)
-        .where(DetectionRow.mitre_technique_ids.isnot(None))
-        .limit(500)
-    ).all()
-    techniques_seen: set[str] = set()
-    for (ids,) in techniques_rows:
-        if isinstance(ids, list):
-            techniques_seen.update(ids)
-
+    data = collect_dashboard_stats(session, catalogue=catalogue)
     return schemas.StatsResponse(
-        events=events,
-        alerts=alerts_total,
-        alerts_open=alerts_open,
-        incidents=incidents,
-        indicators=indicators,
-        rejected_events=rejected,
-        severity_counts=severity_counts,
-        status_counts=status_counts,
-        top_rules={},
-        top_hosts=top_hosts,
-        techniques_observed=sorted(techniques_seen),
+        events=data.events,
+        alerts=data.alerts_total,
+        alerts_open=data.alerts_open,
+        incidents=data.incidents,
+        indicators=data.indicators,
+        rejected_events=data.rejected_events,
+        severity_counts=data.severity_counts,
+        status_counts=data.status_counts,
+        top_rules={rule_id: count for rule_id, _, count in data.top_rules},
+        top_hosts=dict(data.top_hosts),
+        techniques_observed=data.techniques_observed,
     )
 
 

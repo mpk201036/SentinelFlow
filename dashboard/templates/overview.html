@@ -1,0 +1,180 @@
+{% extends "base.html" %}
+{% from "_macros.html" import severity, status, empty, bars %}
+{% block title %}Overview{% endblock %}
+{% block content %}
+<header class="page-head rise rise-1">
+  <div>
+    <p class="eyebrow">Triage overview</p>
+    <h1>What needs a human</h1>
+    <p class="lede">
+      {{ stats.events|compact }} events observed · {{ stats.alerts_total }} alerts raised by deterministic rules ·
+      {{ stats.incidents }} potential investigations
+    </p>
+  </div>
+  {#- One filter row, above everything it scopes. Every figure below this line
+      is computed for the same window, on event time. -#}
+  <nav class="segmented" aria-label="Time window">
+    {% for key, (label, _) in ranges.items() %}
+    <a href="/?range={{ key }}" aria-label="{{ label }}"{% if key == stats.range_key %} class="is-active" aria-current="true"{% endif %}>{{ 'All time' if key == 'all' else key }}</a>
+    {% endfor %}
+  </nav>
+</header>
+
+{% if stats.is_empty %}
+<section class="card rise rise-2">
+  {{ empty("Nothing to triage in this window",
+           "No alerts have been raised yet. Run  sentinelflow demo  to ingest the synthetic attack chain, or import your own events with  sentinelflow import.") }}
+</section>
+{% else %}
+
+<section class="kpis rise rise-2" aria-label="Headline figures">
+  <article class="kpi kpi--hero">
+    <p class="label">Open alerts</p>
+    <p class="kpi-value">{{ stats.alerts_open|compact }}</p>
+    <p class="kpi-note">of {{ stats.alerts_total }} raised · <a href="/alerts?open=true">open the queue</a></p>
+  </article>
+  {% for level in severity_order %}
+  <a class="kpi kpi--sev" href="/alerts?severity={{ level }}">
+    <p class="label">{{ severity(level) }}</p>
+    <p class="kpi-value">{{ stats.severity_counts.get(level, 0)|compact }}</p>
+  </a>
+  {% endfor %}
+  <a class="kpi" href="/incidents">
+    <p class="label">Investigations</p>
+    <p class="kpi-value">{{ stats.incidents|compact }}</p>
+  </a>
+</section>
+
+<div class="grid">
+  <figure class="card span-8 rise rise-3">
+    <figcaption class="card-head">
+      <div>
+        <h2>When the serious activity happened</h2>
+        <p class="card-sub">Alerts per {{ trend.step_label }} interval, by event time · {{ stats.range_label|lower }}</p>
+      </div>
+      <ul class="legend" aria-label="Legend">
+        <li><span class="key key--emphasis" aria-hidden="true"></span>High &amp; critical</li>
+        <li><span class="key key--other" aria-hidden="true"></span>Medium &amp; low</li>
+      </ul>
+    </figcaption>
+    <svg class="trend" viewBox="0 0 {{ trend.width }} {{ trend.height }}" role="img"
+         aria-label="Stacked columns of alerts per {{ trend.step_label }} interval. High and critical alerts sit on the baseline.">
+      {% for y, value in trend.y_ticks %}
+      <line class="grid-line" x1="{{ trend.plot_left }}" x2="{{ trend.plot_left + trend.plot_width }}" y1="{{ y }}" y2="{{ y }}"/>
+      <text class="axis" x="{{ trend.plot_left - 8 }}" y="{{ y }}" dy="0.32em" text-anchor="end">{{ value }}</text>
+      {% endfor %}
+      <line class="axis-line" x1="{{ trend.plot_left }}" x2="{{ trend.plot_left + trend.plot_width }}" y1="{{ trend.baseline }}" y2="{{ trend.baseline }}"/>
+      {% for col in trend.columns %}
+      <g class="col" tabindex="0"
+         data-tip="{{ col.start|ts('%H:%M') }}–{{ col.end|ts('%H:%M') }} UTC"
+         data-tip-rows="High &amp; critical|{{ col.emphasis }};Medium &amp; low|{{ col.other }}"
+         aria-label="{{ col.start|ts('%H:%M') }}: {{ col.emphasis }} high or critical, {{ col.other }} medium or low">
+        <rect class="hit" x="{{ col.slot_x }}" y="{{ trend.plot_top }}" width="{{ col.slot_width }}" height="{{ trend.plot_height }}"/>
+        {% for seg in col.segments %}<path class="seg seg--{{ seg.series }}" d="{{ seg.path }}"/>{% endfor %}
+      </g>
+      {% endfor %}
+      {% if trend.peak %}
+      {#- One direct label, on the peak. Never a number on every column. -#}
+      <text class="data-label" x="{{ trend.peak.x + trend.peak.width / 2 }}" y="{{ trend.peak_label_y }}" text-anchor="middle">{{ trend.peak.total }}</text>
+      {% endif %}
+      {% for x, label in trend.x_labels %}
+      <text class="axis" x="{{ x }}" y="{{ trend.baseline + 18 }}" text-anchor="middle">{{ label }}</text>
+      {% endfor %}
+    </svg>
+    <details class="tableview">
+      <summary>Table view</summary>
+      <table>
+        <caption class="sr-only">Alerts per interval</caption>
+        <thead><tr><th scope="col">Interval (UTC)</th><th scope="col" class="num">High &amp; critical</th><th scope="col" class="num">Medium &amp; low</th></tr></thead>
+        <tbody>
+          {% for col in trend.columns if col.total %}
+          <tr><td class="mono">{{ col.start|ts('%Y-%m-%d %H:%M') }}</td><td class="num">{{ col.emphasis }}</td><td class="num">{{ col.other }}</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </details>
+  </figure>
+
+  <figure class="card span-4 rise rise-3">
+    <figcaption class="card-head">
+      <div>
+        <h2>Where it happened</h2>
+        <p class="card-sub">Hosts with the most alerts</p>
+      </div>
+    </figcaption>
+    {{ bars(host_rows, "Alerts per host", "alerts") }}
+  </figure>
+
+  <figure class="card span-5 rise rise-4">
+    <figcaption class="card-head">
+      <div>
+        <h2>What fired</h2>
+        <p class="card-sub">Detection rules by number of detections</p>
+      </div>
+      <a class="card-link" href="/rules">All rules</a>
+    </figcaption>
+    {{ bars(rule_rows, "Detections per rule", "detections") }}
+  </figure>
+
+  <section class="card span-7 rise rise-4" aria-labelledby="attack-head">
+    <header class="card-head">
+      <div>
+        <h2 id="attack-head">Where it sits in ATT&amp;CK</h2>
+        <p class="card-sub">{{ stats.techniques_observed|length }} techniques across {{ stats.tactics_covered }} of {{ stats.techniques_by_tactic|length }} tactics · every mapping carries a stated reason</p>
+      </div>
+    </header>
+    <ol class="tactics">
+      {% for tactic, items in stats.techniques_by_tactic.items() %}
+      <li class="tactic{% if not items %} tactic--quiet{% endif %}">
+        <p class="tactic-name">{{ tactic }}</p>
+        {% if items %}
+        <ul class="techniques">
+          {% for t in items %}
+          <li><a class="technique" href="{{ t.url }}" rel="noopener noreferrer" target="_blank"
+                 data-tip="{{ t.technique_id }}" data-tip-value="{{ t.alerts }} alert{{ '' if t.alerts == 1 else 's' }}" data-tip-note="{{ t.name }}"><span class="mono">{{ t.technique_id }}</span></a></li>
+          {% endfor %}
+        </ul>
+        {% else %}
+        <p class="tactic-none">not observed</p>
+        {% endif %}
+      </li>
+      {% endfor %}
+    </ol>
+  </section>
+
+  <section class="card span-12 rise rise-5" aria-labelledby="recent-head">
+    <header class="card-head">
+      <div>
+        <h2 id="recent-head">Latest activity</h2>
+        <p class="card-sub">Most recent alerts by event time</p>
+      </div>
+      <a class="card-link" href="/alerts">Full queue</a>
+    </header>
+    <div class="table-wrap">
+      <table class="queue">
+        <thead>
+          <tr>
+            <th scope="col">Severity</th>
+            <th scope="col">Alert</th>
+            <th scope="col">Host</th>
+            <th scope="col">Event time (UTC)</th>
+            <th scope="col">Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for alert, event in stats.recent_alerts %}
+          <tr>
+            <td>{{ severity(alert.severity_level.value, alert.severity.score) }}</td>
+            <td class="queue-title"><a href="/alerts/{{ alert.alert_id }}">{{ alert.title }}</a></td>
+            <td class="mono">{{ event.hostname or '-' }}</td>
+            <td class="mono nowrap">{{ event.timestamp|ts }}</td>
+            <td>{{ status(alert.status.value) }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+</div>
+{% endif %}
+{% endblock %}

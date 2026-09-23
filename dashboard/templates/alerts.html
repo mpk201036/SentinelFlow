@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+{% from "_macros.html" import severity, status, empty %}
+{% block title %}Alerts{% endblock %}
+{% block content %}
+<header class="page-head rise rise-1">
+  <div>
+    <p class="eyebrow">Queue</p>
+    <h1>Alerts</h1>
+    <p class="lede">{{ alerts|length }} shown · ordered by deterministic score, highest first</p>
+  </div>
+</header>
+
+<nav class="filters rise rise-2" aria-label="Filter alerts">
+  <div class="filter-group">
+    <span class="label">Severity</span>
+    <a href="/alerts?status={{ filter_status }}{% if filter_open %}&open=true{% endif %}"{% if not filter_severity %} class="is-active" aria-current="true"{% endif %}>Any</a>
+    {% for level in severities %}
+    <a href="/alerts?severity={{ level }}&status={{ filter_status }}{% if filter_open %}&open=true{% endif %}"{% if filter_severity == level %} class="is-active" aria-current="true"{% endif %}>{{ level }}</a>
+    {% endfor %}
+  </div>
+  <div class="filter-group">
+    <span class="label">Status</span>
+    <a href="/alerts?severity={{ filter_severity }}"{% if not filter_status and not filter_open %} class="is-active" aria-current="true"{% endif %}>Any</a>
+    <a href="/alerts?severity={{ filter_severity }}&open=true"{% if filter_open %} class="is-active" aria-current="true"{% endif %}>Open</a>
+    {% for value in statuses %}
+    <a href="/alerts?status={{ value }}&severity={{ filter_severity }}"{% if filter_status == value %} class="is-active" aria-current="true"{% endif %}>{{ value }}</a>
+    {% endfor %}
+  </div>
+</nav>
+
+<section class="card rise rise-3">
+  {% if alerts %}
+  <div class="table-wrap">
+    <table class="queue">
+      <thead>
+        <tr>
+          <th scope="col">Severity</th>
+          <th scope="col">Alert</th>
+          <th scope="col">Host</th>
+          <th scope="col">Account</th>
+          <th scope="col">Event time (UTC)</th>
+          <th scope="col">Rules</th>
+          <th scope="col">Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for alert in alerts %}
+        {% set event = events.get(alert.alert_id) %}
+        <tr>
+          <td>{{ severity(alert.severity_level.value, alert.severity.score) }}</td>
+          <td class="queue-title"><a href="/alerts/{{ alert.alert_id }}">{{ alert.title }}</a>{% if alert.incident_id %} <a class="tag" href="/incidents/{{ alert.incident_id }}">in investigation</a>{% endif %}</td>
+          <td class="mono">{{ event.hostname if event and event.hostname else '-' }}</td>
+          <td class="mono">{{ event.username if event and event.username else '-' }}</td>
+          <td class="mono nowrap">{{ event.timestamp|ts if event else '-' }}</td>
+          <td class="mono muted">{{ alert.rule_ids|unique|join(', ') }}</td>
+          <td>{{ status(alert.status.value) }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  {{ empty("No alerts match these filters", "Widen the filters above, or run  sentinelflow demo  to generate the synthetic attack chain.") }}
+  {% endif %}
+</section>
+{% endblock %}
