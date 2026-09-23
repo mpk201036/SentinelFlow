@@ -241,6 +241,11 @@ def generate_normal_activity(
 
     Without this, every event in the database is suspicious and the dashboard
     gives a badly misleading impression of what triage is like.
+
+    Output is reproducible for a given ``seed`` **and** ``base_time``. The seed
+    fixes every choice; it does not fix the clock. When ``base_time`` is
+    omitted it is taken from the current time, so the demo data always looks
+    recent — pass it explicitly when byte-identical output matters.
     """
     # Seeded and reproducible on purpose: the same seed must produce the same
     # dataset so demos and tests are deterministic. Not used for anything
@@ -317,12 +322,21 @@ def generate_normal_activity(
 
 
 def generate_dataset(
-    *, normal_count: int = 40, include_scenario: bool = True, seed: int = 1337
+    *,
+    normal_count: int = 40,
+    include_scenario: bool = True,
+    seed: int = 1337,
+    base_time: datetime | None = None,
 ) -> list[GeneratedRecord]:
-    """Background noise plus, optionally, the demonstration scenario."""
-    records = generate_normal_activity(normal_count, seed=seed)
+    """Background noise plus, optionally, the demonstration scenario.
+
+    Pass ``base_time`` as well as ``seed`` for byte-identical output; see
+    :func:`generate_normal_activity`.
+    """
+    records = generate_normal_activity(normal_count, seed=seed, base_time=base_time)
     if include_scenario:
-        records.extend(generate_demo_scenario())
+        scenario_start = base_time + timedelta(hours=5) if base_time else None
+        records.extend(generate_demo_scenario(scenario_start))
     return records
 
 

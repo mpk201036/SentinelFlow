@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -283,13 +284,26 @@ class TestGenerator:
         assert all(failure.timestamp < success.timestamp for failure in failures)
 
     def test_generation_is_reproducible(self) -> None:
-        first = generate_normal_activity(20, seed=7)
-        second = generate_normal_activity(20, seed=7)
+        """The seed fixes every choice; it does not fix the clock.
+
+        base_time is pinned here because the default is relative to now, so two
+        calls a fraction of a second apart legitimately differ.
+        """
+        pinned = datetime(2026, 9, 23, 6, 0, tzinfo=UTC)
+        first = generate_normal_activity(20, seed=7, base_time=pinned)
+        second = generate_normal_activity(20, seed=7, base_time=pinned)
+        assert [r.record for r in first] == [r.record for r in second]
+
+    def test_the_whole_dataset_is_reproducible_when_time_is_pinned(self) -> None:
+        pinned = datetime(2026, 9, 23, 6, 0, tzinfo=UTC)
+        first = generate_dataset(normal_count=10, seed=7, base_time=pinned)
+        second = generate_dataset(normal_count=10, seed=7, base_time=pinned)
         assert [r.record for r in first] == [r.record for r in second]
 
     def test_different_seeds_differ(self) -> None:
-        a = generate_normal_activity(20, seed=1)
-        b = generate_normal_activity(20, seed=2)
+        pinned = datetime(2026, 9, 23, 6, 0, tzinfo=UTC)
+        a = generate_normal_activity(20, seed=1, base_time=pinned)
+        b = generate_normal_activity(20, seed=2, base_time=pinned)
         assert [r.record for r in a] != [r.record for r in b]
 
     def test_sample_data_contains_no_routable_external_addresses(self) -> None:

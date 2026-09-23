@@ -154,6 +154,15 @@ sentinelflow rejections                                # records that failed to 
 sentinelflow demo                                      # generate and ingest a full scenario
 ```
 
+Inspect what was extracted:
+
+```bash
+sentinelflow indicators --frequent      # most-sighted indicators first
+sentinelflow indicators --type domain
+sentinelflow indicators --external      # hide internal addresses
+sentinelflow extract                    # backfill events not yet processed
+```
+
 Additional commands (`serve`, `report`) arrive with their corresponding stages.
 
 ## Configuration
@@ -202,6 +211,7 @@ where the boundaries are.
 | [docs/architecture.md](docs/architecture.md) | System design and data flow |
 | [docs/data-model.md](docs/data-model.md) | Domain models and where the trust boundary is enforced |
 | [docs/integrations.md](docs/integrations.md) | Supported sources and their payload contracts |
+| [docs/ioc-extraction.md](docs/ioc-extraction.md) | Indicator extraction and its false-positive controls |
 | [docs/roadmap.md](docs/roadmap.md) | Build stages and current status |
 | [SECURITY.md](SECURITY.md) | Threat model and controls |
 

@@ -18,7 +18,7 @@ Legend: **Done** · *In progress* · Planned
 | Stage | Scope | Status |
 |---|---|---|
 | 4 | Event ingestion: JSON, CSV, adapters, generator | **Done** |
-| 5 | IOC extraction engine | Planned |
+| 5 | IOC extraction engine | **Done** |
 | 6 | Detection engine and YAML rule set (10+ rules) | Planned |
 | 7 | MITRE ATT&CK catalogue and evidence-backed mapping | Planned |
 | 8 | Deterministic severity engine | Planned |
@@ -111,3 +111,21 @@ Legend: **Done** · *In progress* · Planned
 * CLI: `import`, `generate`, `demo`, `adapters`, `rejections`
 * `docs/integrations.md` documenting every payload contract
 * 156 new tests
+
+## Stage 5 - delivered
+
+* `app/enrichment/patterns.py` - every pattern paired with the rejection rule
+  that makes it usable: version numbers are not addresses, filenames are not
+  domains, hex blobs are not digests, arithmetic is not a path
+* `app/enrichment/defang.py` - refangs `hxxp://` and `evil[.]example` on a copy
+  only; the stored event keeps exactly what arrived
+* `app/enrichment/extractor.py` - structured fields first (so the field name
+  survives as context), free text second; bounded at 200 indicators per event
+* `Indicator.is_internal` no longer relies on `ipaddress.is_private`, which is
+  true for the RFC 5737 documentation ranges and would have labelled the demo
+  scenario's external attacker as an internal host
+* Schema version 3: `event_indicators`, so an indicator found inside a command
+  line is reachable by the question correlation actually asks
+* CLI: `indicators`, `extract`; `import` and `demo` now extract automatically
+* `docs/ioc-extraction.md`
+* 58 new tests, most of them about what must *not* be extracted

@@ -17,7 +17,7 @@ from collections.abc import Iterable, Sequence
 from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 
 from app.database import mappers
@@ -26,6 +26,7 @@ from app.database.tables import (
     AlertRow,
     AnalystNoteRow,
     AuditLogRow,
+    EventIndicatorRow,
     EventRow,
     ImportBatchRow,
     IncidentRow,
@@ -36,7 +37,7 @@ from app.database.tables import (
 from app.models.ai import AIAnalysis
 from app.models.alert import Alert
 from app.models.analyst import AnalystNote, AuditEntry
-from app.models.enums import AlertStatus, Severity
+from app.models.enums import AlertStatus, IndicatorType, Severity
 from app.models.event import SecurityEvent
 from app.models.incident import Incident
 from app.models.indicator import Indicator
@@ -103,7 +104,7 @@ def list_events(
 
 
 def count_events(session: Session) -> int:
-    return len(session.scalars(select(EventRow.event_id)).all())
+    return int(session.scalar(select(func.count()).select_from(EventRow)) or 0)
 
 
 # ---------------------------------------------------------------------------
@@ -115,12 +116,7 @@ def upsert_indicator(session: Session, indicator: Indicator) -> IndicatorRow:
     Indicators are unique per (type, value): seeing ``10.0.0.5`` in fifty events
     is one indicator with fifty sightings, not fifty indicators.
     """
-    existing = session.scalar(
-        select(IndicatorRow).where(
-            IndicatorRow.indicator_type == indicator.indicator_type,
-            IndicatorRow.value == indicator.value,
-        )
-    )
+    existing = find_indicator(session, indicator.indicator_type, indicator.value)
     if existing is not None:
         existing.first_seen = min(existing.first_seen, indicator.first_seen)
         existing.last_seen = max(existing.last_seen, indicator.last_seen)
@@ -150,11 +146,109 @@ def upsert_technique(session: Session, technique: MitreTechnique) -> MitreTechni
     return row
 
 
-def list_indicators(session: Session, *, limit: int = 100) -> list[Indicator]:
+def list_indicators(
+    session: Session,
+    *,
+    indicator_type: IndicatorType | None = None,
+    limit: int = 100,
+    order_by_frequency: bool = False,
+) -> list[Indicator]:
+    """Stored indicators, newest sighting first unless frequency is requested."""
+    query = select(IndicatorRow).limit(limit)
+    if indicator_type is not None:
+        query = query.where(IndicatorRow.indicator_type == indicator_type)
+    query = query.order_by(
+        IndicatorRow.occurrences.desc() if order_by_frequency else IndicatorRow.last_seen.desc()
+    )
+    return [mappers.row_to_indicator(row) for row in session.scalars(query).all()]
+
+
+def count_indicators(session: Session) -> int:
+    return int(session.scalar(select(func.count()).select_from(IndicatorRow)) or 0)
+
+
+def find_indicator(
+    session: Session, indicator_type: IndicatorType, value: str
+) -> IndicatorRow | None:
+    """Look up one indicator by its unique (type, value) pair."""
+    return session.scalar(
+        select(IndicatorRow).where(
+            IndicatorRow.indicator_type == indicator_type, IndicatorRow.value == value
+        )
+    )
+
+
+def link_event_indicator(
+    session: Session,
+    event_id: UUID,
+    indicator_id: UUID,
+    *,
+    source_field: str | None = None,
+    occurrences: int = 1,
+) -> EventIndicatorRow:
+    """Record that an indicator was seen in an event.
+
+    Idempotent per (event, indicator): re-running extraction over the same
+    event updates the sighting count rather than inserting a duplicate.
+    """
+    existing = session.get(EventIndicatorRow, (event_id, indicator_id))
+    if existing is not None:
+        existing.occurrences = occurrences
+        existing.source_field = source_field or existing.source_field
+        session.flush()
+        return existing
+
+    row = EventIndicatorRow(
+        event_id=event_id,
+        indicator_id=indicator_id,
+        source_field=source_field,
+        occurrences=occurrences,
+    )
+    session.add(row)
+    session.flush()
+    return row
+
+
+def list_indicators_for_event(session: Session, event_id: UUID) -> list[Indicator]:
+    """Every indicator extracted from one event."""
     rows = session.scalars(
-        select(IndicatorRow).order_by(IndicatorRow.last_seen.desc()).limit(limit)
+        select(IndicatorRow)
+        .join(EventIndicatorRow, EventIndicatorRow.indicator_id == IndicatorRow.indicator_id)
+        .where(EventIndicatorRow.event_id == event_id)
+        .order_by(IndicatorRow.indicator_type)
     ).all()
     return [mappers.row_to_indicator(row) for row in rows]
+
+
+def find_events_for_indicator(
+    session: Session, indicator_type: IndicatorType, value: str, *, limit: int = 100
+) -> list[SecurityEvent]:
+    """Every event an indicator was seen in.
+
+    The question correlation asks, and the reason ``event_indicators`` exists:
+    a value found inside a command line is not reachable by querying columns.
+    """
+    rows = session.scalars(
+        select(EventRow)
+        .join(EventIndicatorRow, EventIndicatorRow.event_id == EventRow.event_id)
+        .join(IndicatorRow, IndicatorRow.indicator_id == EventIndicatorRow.indicator_id)
+        .where(IndicatorRow.indicator_type == indicator_type, IndicatorRow.value == value)
+        .order_by(EventRow.timestamp.asc())
+        .limit(limit)
+    ).all()
+    return [mappers.row_to_event(row) for row in rows]
+
+
+def events_without_indicators(session: Session, *, limit: int = 500) -> list[SecurityEvent]:
+    """Stored events that extraction has not run over yet."""
+    linked = select(EventIndicatorRow.event_id)
+    rows = session.scalars(
+        select(EventRow)
+        .where(EventRow.event_id.not_in(linked))
+        .order_by(EventRow.timestamp.asc())
+        .limit(limit)
+    ).all()
+    return [mappers.row_to_event(row) for row in rows]
 
 
 # ---------------------------------------------------------------------------

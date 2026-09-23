@@ -46,7 +46,7 @@ from app.models.ingestion import RejectionReason
 # ---------------------------------------------------------------------------
 # Schema versioning
 # ---------------------------------------------------------------------------
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 
 class SchemaVersion(Base):
@@ -242,6 +242,27 @@ class IndicatorRow(Base):
     alerts: Mapped[list[AlertRow]] = relationship(
         secondary=alert_indicators, back_populates="indicators"
     )
+
+
+class EventIndicatorRow(Base):
+    """Which indicators were seen in which events.
+
+    Without this link an indicator only remembers the first event it came from,
+    and "show me every event mentioning 192.0.2.77" would need a full scan of
+    every text field. Correlation in Stage 9 asks exactly that question, and a
+    value found inside a command line is not reachable any other way.
+    """
+
+    __tablename__ = "event_indicators"
+
+    event_id: Mapped[UUID] = mapped_column(
+        sa.Uuid, ForeignKey("events.event_id", ondelete="CASCADE"), primary_key=True
+    )
+    indicator_id: Mapped[UUID] = mapped_column(
+        sa.Uuid, ForeignKey("indicators.indicator_id", ondelete="CASCADE"), primary_key=True
+    )
+    source_field: Mapped[str | None] = mapped_column(sa.String(64))
+    occurrences: Mapped[int] = mapped_column(sa.Integer, nullable=False, default=1)
 
 
 # ---------------------------------------------------------------------------
@@ -573,6 +594,7 @@ ALL_TABLES = [
     "detections",
     "indicators",
     "alert_indicators",
+    "event_indicators",
     "incident_alerts",
     "mitre_techniques",
     "mitre_mappings",

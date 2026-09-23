@@ -26,6 +26,33 @@ from app.core.sanitize import (
 from app.models.base import EvidenceModel, UtcDatetime, new_id, utcnow
 from app.models.enums import IndicatorType
 
+#: Networks that are genuinely on somebody's internal estate.
+#:
+#: Deliberately not ``ipaddress.is_private``: that property is true for the
+#: RFC 5737 documentation ranges (192.0.2.0/24 and friends) because they are
+#: not globally routable. Labelling those "internal" in the UI would be
+#: actively misleading - they are exactly what synthetic and report data uses
+#: to represent an *external* attacker.
+_INTERNAL_NETWORKS = tuple(
+    ipaddress.ip_network(cidr)
+    for cidr in (
+        "10.0.0.0/8",
+        "172.16.0.0/12",
+        "192.168.0.0/16",
+        "127.0.0.0/8",
+        "169.254.0.0/16",
+        "::1/128",
+        "fc00::/7",
+        "fe80::/10",
+    )
+)
+
+#: Reserved for documentation (RFC 5737, RFC 3849). Never real infrastructure.
+_DOCUMENTATION_NETWORKS = tuple(
+    ipaddress.ip_network(cidr)
+    for cidr in ("192.0.2.0/24", "198.51.100.0/24", "203.0.113.0/24", "2001:db8::/32")
+)
+
 
 class Indicator(EvidenceModel):
     """A single indicator observed in one or more events."""
@@ -89,19 +116,37 @@ class Indicator(EvidenceModel):
         return clean_line(value, max_length=64)
 
     @property
+    def _address(self) -> ipaddress.IPv4Address | ipaddress.IPv6Address | None:
+        if self.indicator_type not in (IndicatorType.IPV4, IndicatorType.IPV6):
+            return None
+        try:
+            return ipaddress.ip_address(self.value)
+        except ValueError:  # pragma: no cover - validated on construction
+            return None
+
+    @property
     def is_internal(self) -> bool:
-        """True for RFC1918 / loopback / link-local addresses.
+        """True for addresses on a private, loopback or link-local network.
 
         Useful context, not a verdict: internal addresses are still worth
         recording, they just rarely belong in an external threat feed.
         """
-        if self.indicator_type not in (IndicatorType.IPV4, IndicatorType.IPV6):
+        address = self._address
+        if address is None:
             return False
-        try:
-            address = ipaddress.ip_address(self.value)
-        except ValueError:  # pragma: no cover - value is validated on construction
+        return any(address in network for network in _INTERNAL_NETWORKS)
+
+    @property
+    def is_documentation(self) -> bool:
+        """True for the RFC 5737 / RFC 3849 documentation ranges.
+
+        Seeing one of these in data that is supposed to be real is itself worth
+        noticing - it usually means test data leaked into a production feed.
+        """
+        address = self._address
+        if address is None:
             return False
-        return address.is_private or address.is_loopback or address.is_link_local
+        return any(address in network for network in _DOCUMENTATION_NETWORKS)
 
     def merged_with(self, other: Indicator) -> Indicator:
         """Combine two sightings of the same indicator into one record."""

@@ -25,8 +25,10 @@ from app.core.config import AIProvider, get_settings
 from app.core.logging import configure_logging, get_logger
 from app.database.init_db import database_status, initialize_database
 from app.database.session import get_engine, session_scope
+from app.enrichment import EnrichmentService, EnrichmentSummary
 from app.ingestion import IngestionService, generate_dataset, group_by_adapter, list_adapters
 from app.ingestion.service import IngestionOutcome
+from app.models.enums import IndicatorType
 from app.models.ingestion import IngestionReport
 
 app = typer.Typer(
@@ -366,14 +368,21 @@ def demo(
     grouped = group_by_adapter(generate_dataset())
 
     outcomes: list[IngestionOutcome] = []
+    enrichment = EnrichmentSummary()
     with session_scope(settings) as session:
         service = IngestionService(session, settings)
+        enricher = EnrichmentService(session)
         for adapter_name, records in sorted(grouped.items()):
-            outcomes.append(
-                service.ingest_mappings(
-                    records, adapter_name=adapter_name, origin=f"demo:{adapter_name}", force=force
-                )
+            outcome = service.ingest_mappings(
+                records, adapter_name=adapter_name, origin=f"demo:{adapter_name}", force=force
             )
+            outcomes.append(outcome)
+            batch = enricher.enrich_events(outcome.events)
+            enrichment.events_processed += batch.events_processed
+            enrichment.indicators_found += batch.indicators_found
+            enrichment.indicators_new += batch.indicators_new
+            for name, count in batch.by_type.items():
+                enrichment.by_type[name] = enrichment.by_type.get(name, 0) + count
 
     table = Table(title="Demo ingestion", header_style="bold", title_style="bold")
     table.add_column("Source", style="cyan")
@@ -383,6 +392,9 @@ def demo(
         table.add_row(outcome.report.adapter, str(outcome.accepted), str(outcome.rejected))
     console.print(table)
     console.print(f"[green]{sum(o.accepted for o in outcomes)} events ingested.[/green]")
+    if enrichment.indicators_found:
+        console.print(f"[green]{enrichment.indicators_new} distinct indicators extracted.[/green]")
+        console.print(f"[dim]{enrichment.by_type}[/dim]")
 
 
 @app.command()
@@ -427,3 +439,96 @@ def rejections(
             record.detail[:70],
         )
     console.print(table)
+
+
+# ---------------------------------------------------------------------------
+# Enrichment
+# ---------------------------------------------------------------------------
+@app.command()
+def indicators(
+    indicator_type: str | None = typer.Option(
+        None, "--type", "-t", help="Filter by type, e.g. ipv4, domain, sha256."
+    ),
+    limit: int = typer.Option(25, "--limit", "-l", help="How many to show."),
+    frequent: bool = typer.Option(False, "--frequent", help="Order by sighting count."),
+    external_only: bool = typer.Option(
+        False, "--external", help="Hide addresses on internal networks."
+    ),
+) -> None:
+    """List extracted indicators of compromise."""
+    from app.database import repository
+
+    settings = get_settings()
+    try:
+        selected = IndicatorType(indicator_type) if indicator_type else None
+    except ValueError as exc:
+        console.print(
+            f"[red]Unknown indicator type {indicator_type!r}.[/red] "
+            f"Available: {', '.join(t.value for t in IndicatorType)}"
+        )
+        raise typer.Exit(code=1) from exc
+
+    with session_scope(settings) as session:
+        found = repository.list_indicators(
+            session,
+            indicator_type=selected,
+            limit=limit * 4 if external_only else limit,
+            order_by_frequency=frequent,
+        )
+
+    if external_only:
+        found = [i for i in found if not i.is_internal][:limit]
+
+    if not found:
+        console.print("[yellow]No indicators stored.[/yellow] Run: sentinelflow extract")
+        return
+
+    table = Table(title="Indicators", header_style="bold", title_style="bold")
+    table.add_column("Type", style="cyan", no_wrap=True)
+    table.add_column("Value")
+    table.add_column("Seen", justify="right")
+    table.add_column("First seen", style="dim", no_wrap=True)
+    table.add_column("Context", style="dim")
+    for indicator in found:
+        context = indicator.source_field or "-"
+        if indicator.is_internal:
+            context += " (internal)"
+        elif indicator.is_documentation:
+            context += " (documentation range)"
+        table.add_row(
+            indicator.indicator_type.value,
+            indicator.value[:70],
+            str(indicator.occurrences),
+            indicator.first_seen.strftime("%Y-%m-%d %H:%M"),
+            context,
+        )
+    console.print(table)
+    console.print(
+        "[dim]An indicator is a fact about a string that appeared in an event. "
+        "It is not a verdict.[/dim]"
+    )
+
+
+@app.command()
+def extract(
+    limit: int = typer.Option(500, "--limit", "-l", help="Maximum events to process."),
+) -> None:
+    """Extract indicators from stored events that have not been processed."""
+    configure_logging()
+    settings = get_settings()
+
+    with session_scope(settings) as session:
+        summary = EnrichmentService(session).backfill(limit=limit)
+
+    if not summary.events_processed:
+        console.print("[green]Every stored event has already been processed.[/green]")
+        return
+
+    console.print(f"[green]{summary.summary()}[/green]")
+    if summary.by_type:
+        table = Table(title="Indicators by type", header_style="bold", title_style="bold")
+        table.add_column("Type", style="cyan", no_wrap=True)
+        table.add_column("Found", justify="right")
+        for name, count in sorted(summary.by_type.items(), key=lambda item: -item[1]):
+            table.add_row(name, str(count))
+        console.print(table)

@@ -52,12 +52,22 @@ def _add_ingestion_tables(connection: Connection) -> None:
     Base.metadata.create_all(connection, tables=tables)
 
 
+def _add_event_indicator_link(connection: Connection) -> None:
+    """Version 3: link indicators to every event they were seen in."""
+    Base.metadata.create_all(connection, tables=[Base.metadata.tables["event_indicators"]])
+
+
 #: Ordered migrations applied on top of the baseline.
 MIGRATIONS: tuple[Migration, ...] = (
     Migration(
         version=2,
         description="add import_batches and rejected_events",
         upgrade=_add_ingestion_tables,
+    ),
+    Migration(
+        version=3,
+        description="add event_indicators",
+        upgrade=_add_event_indicator_link,
     ),
 )
 

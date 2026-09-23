@@ -35,6 +35,12 @@ content of an ingested event**, and who wants to:
 * It does not silently discard input. Every imported record becomes an event
   or a rejection with a stated reason, so a gap in the data is visible rather
   than invisible.
+* It does not edit evidence. Defanged indicators (`hxxp://`, `evil[.]example`)
+  are refanged on a copy used only for extraction; the stored event keeps
+  exactly what arrived.
+* It does not label extracted indicators as malicious. An indicator is a fact
+  about a string that appeared in an event, and the model has no field in
+  which to record a verdict.
 
 ## Handling credentials
 
