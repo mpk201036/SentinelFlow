@@ -21,7 +21,9 @@ content of an ingested event**, and who wants to:
 | Leak credentials into logs | A redaction filter rewrites password/token/key-like values on every log record. |
 | Override the AI's instructions (prompt injection) | Event data is passed to the model inside explicit untrusted-evidence delimiters, never concatenated into the system prompt, and the model's output is schema-validated before storage. The AI output can never change an alert's official severity. |
 | Exhaust memory or disk | Upload size, event count and per-field length are capped by configuration. |
-| Escape the data directory via a crafted path | Imported file paths are resolved and confined to allow-listed directories. |
+| Escape the data directory via a crafted path | Paths are resolved *first* — symlinks included — and only then checked against an allow-list. Checking before resolution is the classic mistake: a path with no `..` in it can still point anywhere. |
+| Exhaust the stack with nested JSON | Nesting depth is capped and `RecursionError` is caught, so a bracket bomb becomes one rejected record rather than a crash. |
+| Hide an event by forward-dating it | Timestamps more than 24 hours in the future are rejected, so an event cannot be pushed off the bottom of a time-sorted queue. |
 | Poison the verdict | The AI is advisory only. Severity, detections and MITRE mappings are produced by deterministic code and are always displayed separately from AI output. |
 
 ## What SentinelFlow deliberately does not do
@@ -30,6 +32,9 @@ content of an ingested event**, and who wants to:
 * It does not call out to commercial threat-intelligence services.
 * It does not make any network request at all when AI is disabled (the default).
 * It does not auto-close, auto-escalate or auto-remediate. A human decides.
+* It does not silently discard input. Every imported record becomes an event
+  or a rejection with a stated reason, so a gap in the data is visible rather
+  than invisible.
 
 ## Handling credentials
 

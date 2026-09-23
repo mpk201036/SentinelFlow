@@ -23,6 +23,7 @@ from app.database.tables import (
     IndicatorRow,
     MitreMappingRow,
     MitreTechniqueRow,
+    RejectedEventRow,
 )
 from app.models.ai import AIAnalysis, AIStatement
 from app.models.alert import Alert, AlertSeverity, SeverityFactor
@@ -31,6 +32,7 @@ from app.models.detection import DetectionMatch, DetectionResult
 from app.models.event import SecurityEvent
 from app.models.incident import Incident
 from app.models.indicator import Indicator
+from app.models.ingestion import RejectedRecord
 from app.models.mitre import MitreMapping, MitreTechnique
 
 
@@ -436,4 +438,34 @@ def row_to_audit(row: AuditLogRow) -> AuditEntry:
         before=row.before,
         after=row.after,
         detail=row.detail,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Rejected records
+# ---------------------------------------------------------------------------
+def rejected_to_row(record: RejectedRecord, batch_id: Any = None) -> RejectedEventRow:
+    return RejectedEventRow(
+        record_id=record.record_id,
+        batch_id=batch_id,
+        rejected_at=record.rejected_at,
+        index_in_batch=record.index,
+        reason=record.reason,
+        detail=record.detail,
+        payload=record.payload,
+        origin=record.origin,
+        adapter=record.adapter,
+    )
+
+
+def row_to_rejected(row: RejectedEventRow) -> RejectedRecord:
+    return RejectedRecord(
+        record_id=row.record_id,
+        rejected_at=row.rejected_at,
+        index=row.index_in_batch,
+        reason=row.reason,
+        detail=row.detail,
+        payload=row.payload,
+        origin=row.origin,
+        adapter=row.adapter,
     )

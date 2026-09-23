@@ -143,8 +143,18 @@ sentinelflow init-db    # create the database schema
 sentinelflow db-info    # schema version, table sizes, integrity settings
 ```
 
-Additional commands (`import`, `demo`, `serve`, `report`) arrive with their
-corresponding stages.
+Import events, or generate a demonstration dataset:
+
+```bash
+sentinelflow adapters                                  # supported sources
+sentinelflow import data/samples/sysmon.json           # auto-detects the source
+sentinelflow import data/samples/firewall.csv
+sentinelflow import events.json --source windows_security --dry-run
+sentinelflow rejections                                # records that failed to parse
+sentinelflow demo                                      # generate and ingest a full scenario
+```
+
+Additional commands (`serve`, `report`) arrive with their corresponding stages.
 
 ## Configuration
 
@@ -191,6 +201,7 @@ where the boundaries are.
 |---|---|
 | [docs/architecture.md](docs/architecture.md) | System design and data flow |
 | [docs/data-model.md](docs/data-model.md) | Domain models and where the trust boundary is enforced |
+| [docs/integrations.md](docs/integrations.md) | Supported sources and their payload contracts |
 | [docs/roadmap.md](docs/roadmap.md) | Build stages and current status |
 | [SECURITY.md](SECURITY.md) | Threat model and controls |
 

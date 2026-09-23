@@ -27,9 +27,11 @@ from app.database.tables import (
     AnalystNoteRow,
     AuditLogRow,
     EventRow,
+    ImportBatchRow,
     IncidentRow,
     IndicatorRow,
     MitreTechniqueRow,
+    RejectedEventRow,
 )
 from app.models.ai import AIAnalysis
 from app.models.alert import Alert
@@ -38,6 +40,7 @@ from app.models.enums import AlertStatus, Severity
 from app.models.event import SecurityEvent
 from app.models.incident import Incident
 from app.models.indicator import Indicator
+from app.models.ingestion import IngestionReport, RejectedRecord
 from app.models.mitre import MitreTechnique
 
 _ALERT_LOADERS = (
@@ -315,6 +318,71 @@ def list_audit(
     if object_id is not None:
         query = query.where(AuditLogRow.object_id == object_id)
     return [mappers.row_to_audit(row) for row in session.scalars(query).all()]
+
+
+# ---------------------------------------------------------------------------
+# Ingestion bookkeeping
+# ---------------------------------------------------------------------------
+def find_batch_by_hash(session: Session, content_hash: str) -> ImportBatchRow | None:
+    """Look up a previous import of identical content."""
+    return session.scalar(select(ImportBatchRow).where(ImportBatchRow.content_hash == content_hash))
+
+
+def save_import_batch(session: Session, report: IngestionReport) -> ImportBatchRow:
+    """Record an import and everything it rejected.
+
+    A batch row describes *content*, keyed by its hash, so a deliberate
+    re-import (``--force``) or a repeated API submission updates the existing
+    row rather than inserting a second one with the same hash. The fact that
+    the content was imported again is recorded in the audit log, which is the
+    table designed for "what happened, and when".
+    """
+    content_hash = report.content_hash or str(report.batch_id)
+    existing = find_batch_by_hash(session, content_hash)
+    if existing is not None:
+        existing.imported_at = report.started_at
+        existing.origin = report.origin
+        existing.adapter = report.adapter
+        existing.accepted += report.accepted
+        existing.rejected += report.rejected
+        for rejection in report.rejections:
+            existing.rejections.append(mappers.rejected_to_row(rejection, existing.batch_id))
+        session.flush()
+        return existing
+
+    row = ImportBatchRow(
+        batch_id=report.batch_id,
+        imported_at=report.started_at,
+        origin=report.origin,
+        adapter=report.adapter,
+        content_hash=content_hash,
+        accepted=report.accepted,
+        rejected=report.rejected,
+    )
+    row.rejections = [
+        mappers.rejected_to_row(rejection, report.batch_id) for rejection in report.rejections
+    ]
+    session.add(row)
+    session.flush()
+    return row
+
+
+def list_rejections(
+    session: Session, *, batch_id: UUID | None = None, limit: int = 100
+) -> list[RejectedRecord]:
+    """Records that failed to normalise, newest first."""
+    query = select(RejectedEventRow).order_by(RejectedEventRow.rejected_at.desc()).limit(limit)
+    if batch_id is not None:
+        query = query.where(RejectedEventRow.batch_id == batch_id)
+    return [mappers.row_to_rejected(row) for row in session.scalars(query).all()]
+
+
+def list_batches(session: Session, *, limit: int = 50) -> list[ImportBatchRow]:
+    return list(
+        session.scalars(
+            select(ImportBatchRow).order_by(ImportBatchRow.imported_at.desc()).limit(limit)
+        ).all()
+    )
 
 
 def _now() -> datetime:

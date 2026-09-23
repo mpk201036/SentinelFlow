@@ -99,6 +99,22 @@ ignore = [
     "E501",  # line length handled by the formatter
 ]
 
+[tool.ruff.lint.flake8-bugbear]
+# Typer and FastAPI express parameter metadata as call expressions in argument
+# defaults. That is the documented API for both and the objects are immutable,
+# so B008 ("mutable default") does not apply to them.
+extend-immutable-calls = [
+    "typer.Argument",
+    "typer.Option",
+    "fastapi.Body",
+    "fastapi.Depends",
+    "fastapi.File",
+    "fastapi.Form",
+    "fastapi.Header",
+    "fastapi.Path",
+    "fastapi.Query",
+]
+
 [tool.ruff.lint.per-file-ignores]
 "tests/*" = ["S", "B011"]
 

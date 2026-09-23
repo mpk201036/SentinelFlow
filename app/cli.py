@@ -24,7 +24,10 @@ from app import __version__
 from app.core.config import AIProvider, get_settings
 from app.core.logging import configure_logging, get_logger
 from app.database.init_db import database_status, initialize_database
-from app.database.session import get_engine
+from app.database.session import get_engine, session_scope
+from app.ingestion import IngestionService, generate_dataset, group_by_adapter, list_adapters
+from app.ingestion.service import IngestionOutcome
+from app.models.ingestion import IngestionReport
 
 app = typer.Typer(
     name="sentinelflow",
@@ -255,3 +258,172 @@ def _check_ollama(base_url: str) -> tuple[str, str, str]:
 
 if __name__ == "__main__":  # pragma: no cover
     app()
+
+
+# ---------------------------------------------------------------------------
+# Ingestion
+# ---------------------------------------------------------------------------
+def _print_report(report: IngestionReport) -> None:
+    """Render an import result, rejections included."""
+    if report.duplicate_batch:
+        console.print(
+            f"[yellow]Skipped[/yellow] {report.origin}: identical content already imported."
+        )
+        console.print("[dim]Pass --force to import it again.[/dim]")
+        return
+
+    colour = "green" if report.rejected == 0 else "yellow"
+    console.print(
+        f"[{colour}]{report.accepted} accepted[/{colour}], {report.rejected} rejected "
+        f"via the [cyan]{report.adapter}[/cyan] adapter ({report.duration_ms} ms)"
+    )
+
+    if not report.rejections:
+        return
+
+    table = Table(title="Rejected records", header_style="bold", title_style="bold")
+    table.add_column("#", justify="right", style="dim")
+    table.add_column("Reason", style="yellow", no_wrap=True)
+    table.add_column("Detail")
+    for rejection in report.rejections[:15]:
+        table.add_row(str(rejection.index), rejection.reason.value, rejection.detail[:90])
+    console.print(table)
+    if len(report.rejections) > 15:
+        console.print(
+            f"[dim]...and {len(report.rejections) - 15} more. See: sentinelflow rejections[/dim]"
+        )
+
+
+@app.command("import")
+def import_events(
+    path: Path = typer.Argument(..., help="JSON, NDJSON or CSV file to import."),
+    source: str | None = typer.Option(
+        None, "--source", "-s", help="Adapter name. Auto-detected when omitted."
+    ),
+    force: bool = typer.Option(False, "--force", help="Import again even if already seen."),
+    dry_run: bool = typer.Option(
+        False, "--dry-run", help="Normalise and report, but store nothing."
+    ),
+) -> None:
+    """Import security events from a file."""
+    configure_logging()
+    settings = get_settings()
+
+    try:
+        with session_scope(settings) as session:
+            outcome = IngestionService(session, settings).ingest_file(
+                path, adapter_name=source, force=force, persist=not dry_run
+            )
+    except (FileNotFoundError, ValueError) as exc:
+        console.print(f"[red]{type(exc).__name__}:[/red] {exc}")
+        raise typer.Exit(code=1) from exc
+
+    if dry_run:
+        console.print("[dim]Dry run - nothing was stored.[/dim]")
+    _print_report(outcome.report)
+    if outcome.report.rejected and not outcome.report.accepted:
+        raise typer.Exit(code=1)
+
+
+@app.command()
+def generate(
+    out: Path = typer.Option(
+        Path("data/samples"), "--out", "-o", help="Directory to write sample files into."
+    ),
+    normal: int = typer.Option(40, "--normal", "-n", help="Number of benign background events."),
+    seed: int = typer.Option(1337, "--seed", help="Seed, so output is reproducible."),
+    scenario: bool = typer.Option(
+        True, "--scenario/--no-scenario", help="Include the demo attack chain."
+    ),
+) -> None:
+    """Write synthetic sample datasets, one file per source."""
+    import json as _json
+
+    records = generate_dataset(normal_count=normal, include_scenario=scenario, seed=seed)
+    grouped = group_by_adapter(records)
+    out.mkdir(parents=True, exist_ok=True)
+
+    table = Table(title="Generated samples", header_style="bold", title_style="bold")
+    table.add_column("File", style="cyan")
+    table.add_column("Records", justify="right")
+    for adapter_name, items in sorted(grouped.items()):
+        destination = out / f"{adapter_name}.json"
+        destination.write_text(_json.dumps(items, indent=2) + "\n", encoding="utf-8")
+        table.add_row(str(destination), str(len(items)))
+    console.print(table)
+    console.print(
+        f"[dim]All data is synthetic. Import with: sentinelflow import {out}/sysmon.json[/dim]"
+    )
+
+
+@app.command()
+def demo(
+    force: bool = typer.Option(False, "--force", help="Import again even if already seen."),
+) -> None:
+    """Generate the demonstration dataset and ingest it in one step."""
+    configure_logging()
+    settings = get_settings()
+    grouped = group_by_adapter(generate_dataset())
+
+    outcomes: list[IngestionOutcome] = []
+    with session_scope(settings) as session:
+        service = IngestionService(session, settings)
+        for adapter_name, records in sorted(grouped.items()):
+            outcomes.append(
+                service.ingest_mappings(
+                    records, adapter_name=adapter_name, origin=f"demo:{adapter_name}", force=force
+                )
+            )
+
+    table = Table(title="Demo ingestion", header_style="bold", title_style="bold")
+    table.add_column("Source", style="cyan")
+    table.add_column("Accepted", justify="right")
+    table.add_column("Rejected", justify="right")
+    for outcome in outcomes:
+        table.add_row(outcome.report.adapter, str(outcome.accepted), str(outcome.rejected))
+    console.print(table)
+    console.print(f"[green]{sum(o.accepted for o in outcomes)} events ingested.[/green]")
+
+
+@app.command()
+def adapters() -> None:
+    """List the source adapters available for import."""
+    table = Table(title="Source adapters", header_style="bold", title_style="bold")
+    table.add_column("Name", style="cyan", no_wrap=True)
+    table.add_column("Aliases", style="dim")
+    table.add_column("Description")
+    for adapter in list_adapters():
+        table.add_row(adapter.name, ", ".join(adapter.aliases) or "-", adapter.description)
+    console.print(table)
+
+
+@app.command()
+def rejections(
+    limit: int = typer.Option(20, "--limit", "-l", help="How many to show."),
+) -> None:
+    """Show records that could not be normalised."""
+    from app.database import repository
+
+    settings = get_settings()
+    with session_scope(settings) as session:
+        records = repository.list_rejections(session, limit=limit)
+
+    if not records:
+        console.print("[green]No rejected records.[/green]")
+        return
+
+    table = Table(title="Rejected records", header_style="bold", title_style="bold")
+    table.add_column("When", style="dim", no_wrap=True)
+    table.add_column("Origin", style="cyan")
+    table.add_column("#", justify="right", style="dim")
+    table.add_column("Reason", style="yellow", no_wrap=True)
+    table.add_column("Detail")
+    for record in records:
+        table.add_row(
+            record.rejected_at.strftime("%Y-%m-%d %H:%M"),
+            record.origin or "-",
+            str(record.index),
+            record.reason.value,
+            record.detail[:70],
+        )
+    console.print(table)

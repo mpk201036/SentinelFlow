@@ -17,7 +17,7 @@ Legend: **Done** · *In progress* · Planned
 
 | Stage | Scope | Status |
 |---|---|---|
-| 4 | Event ingestion: JSON, CSV, adapters, generator | Planned |
+| 4 | Event ingestion: JSON, CSV, adapters, generator | **Done** |
 | 5 | IOC extraction engine | Planned |
 | 6 | Detection engine and YAML rule set (10+ rules) | Planned |
 | 7 | MITRE ATT&CK catalogue and evidence-backed mapping | Planned |
@@ -89,3 +89,25 @@ Legend: **Done** · *In progress* · Planned
 * CLI: `sentinelflow init-db`, `sentinelflow db-info`; `doctor` now checks the
   schema version
 * 44 new tests, mostly integration against a real SQLite file
+
+## Stage 4 - delivered
+
+* `app/core/paths.py` - symlink-aware path confinement and a size check applied
+  before a file is read
+* Six adapters (Sysmon, Windows Security, firewall, DriftWatch,
+  GhostCredential, canonical) with auto-detection; an explicit `--source`
+  always wins over a guess
+* `app/ingestion/parsers.py` - JSON arrays, single objects, NDJSON and wrapped
+  arrays; CSV with delimiter detection and BOM handling; record count, field
+  size and JSON nesting depth all bounded
+* `app/ingestion/service.py` - the contract that an import never silently loses
+  a record: every input becomes a stored event or a stored rejection with a
+  reason. Idempotent by content hash; individual events deliberately not
+  deduplicated
+* `app/ingestion/generator.py` - a synthetic attack chain spanning four sources,
+  plus reproducible benign background activity
+* Schema version 2: `import_batches` and `rejected_events`, applied to an
+  existing database by the migration runner
+* CLI: `import`, `generate`, `demo`, `adapters`, `rejections`
+* `docs/integrations.md` documenting every payload contract
+* 156 new tests

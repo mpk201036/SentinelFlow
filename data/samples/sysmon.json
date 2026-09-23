@@ -1,0 +1,338 @@
+[
+  {
+    "UtcTime": "2026-09-23 06:12:52.548",
+    "EventID": 1,
+    "Computer": "WIN-DEV-07",
+    "User": "LAB\\m.okafor",
+    "Image": "C:\\Program Files\\chrome.exe",
+    "ParentImage": "C:\\Windows\\explorer.exe",
+    "CommandLine": "chrome.exe --profile-directory=Default",
+    "ProcessId": 2001,
+    "ParentProcessId": 1001
+  },
+  {
+    "UtcTime": "2026-09-23 08:41:43.548",
+    "EventID": 1,
+    "Computer": "WIN-DEV-07",
+    "User": "LAB\\lab-user",
+    "Image": "C:\\Program Files\\teams.exe",
+    "ParentImage": "C:\\Windows\\explorer.exe",
+    "CommandLine": "teams.exe --startup",
+    "ProcessId": 2002,
+    "ParentProcessId": 1002
+  },
+  {
+    "UtcTime": "2026-09-23 03:19:00.548",
+    "EventID": 1,
+    "Computer": "WIN-DEV-07",
+    "User": "LAB\\build-agent",
+    "Image": "C:\\Program Files\\outlook.exe",
+    "ParentImage": "C:\\Windows\\explorer.exe",
+    "CommandLine": "outlook.exe /recycle",
+    "ProcessId": 2003,
+    "ParentProcessId": 1003
+  },
+  {
+    "UtcTime": "2026-09-23 02:53:03.548",
+    "EventID": 1,
+    "Computer": "WIN-DEV-07",
+    "User": "LAB\\lab-user",
+    "Image": "C:\\Program Files\\chrome.exe",
+    "ParentImage": "C:\\Windows\\explorer.exe",
+    "CommandLine": "chrome.exe --profile-directory=Default",
+    "ProcessId": 2004,
+    "ParentProcessId": 1004
+  },
+  {
+    "UtcTime": "2026-09-23 05:34:39.548",
+    "EventID": 22,
+    "Computer": "SRV-FILE-01",
+    "User": "LAB\\m.okafor",
+    "Image": "C:\\Program Files\\chrome.exe",
+    "QueryName": "updates.example"
+  },
+  {
+    "UtcTime": "2026-09-23 08:31:56.548",
+    "EventID": 1,
+    "Computer": "WIN-LAB-01",
+    "User": "LAB\\lab-user",
+    "Image": "C:\\Program Files\\git.exe",
+    "ParentImage": "C:\\Windows\\code.exe",
+    "CommandLine": "git.exe fetch --all",
+    "ProcessId": 2006,
+    "ParentProcessId": 1006
+  },
+  {
+    "UtcTime": "2026-09-23 03:12:42.548",
+    "EventID": 1,
+    "Computer": "WIN-LAB-01",
+    "User": "LAB\\j.taylor",
+    "Image": "C:\\Program Files\\outlook.exe",
+    "ParentImage": "C:\\Windows\\explorer.exe",
+    "CommandLine": "outlook.exe /recycle",
+    "ProcessId": 2007,
+    "ParentProcessId": 1007
+  },
+  {
+    "UtcTime": "2026-09-23 04:30:40.548",
+    "EventID": 1,
+    "Computer": "SRV-FILE-01",
+    "User": "LAB\\m.okafor",
+    "Image": "C:\\Program Files\\git.exe",
+    "ParentImage": "C:\\Windows\\code.exe",
+    "CommandLine": "git.exe fetch --all",
+    "ProcessId": 2008,
+    "ParentProcessId": 1008
+  },
+  {
+    "UtcTime": "2026-09-23 05:45:30.548",
+    "EventID": 1,
+    "Computer": "SRV-FILE-01",
+    "User": "LAB\\j.taylor",
+    "Image": "C:\\Program Files\\git.exe",
+    "ParentImage": "C:\\Windows\\code.exe",
+    "CommandLine": "git.exe fetch --all",
+    "ProcessId": 2009,
+    "ParentProcessId": 1009
+  },
+  {
+    "UtcTime": "2026-09-23 08:02:07.548",
+    "EventID": 22,
+    "Computer": "SRV-FILE-01",
+    "User": "LAB\\lab-user",
+    "Image": "C:\\Program Files\\chrome.exe",
+    "QueryName": "cdn.example"
+  },
+  {
+    "UtcTime": "2026-09-23 07:39:29.548",
+    "EventID": 1,
+    "Computer": "WIN-DEV-07",
+    "User": "LAB\\m.okafor",
+    "Image": "C:\\Program Files\\chrome.exe",
+    "ParentImage": "C:\\Windows\\explorer.exe",
+    "CommandLine": "chrome.exe --profile-directory=Default",
+    "ProcessId": 2013,
+    "ParentProcessId": 1013
+  },
+  {
+    "UtcTime": "2026-09-23 03:15:29.548",
+    "EventID": 22,
+    "Computer": "WIN-LAB-02",
+    "User": "LAB\\m.okafor",
+    "Image": "C:\\Program Files\\chrome.exe",
+    "QueryName": "docs.example"
+  },
+  {
+    "UtcTime": "2026-09-23 05:54:02.548",
+    "EventID": 1,
+    "Computer": "WIN-LAB-01",
+    "User": "LAB\\build-agent",
+    "Image": "C:\\Program Files\\chrome.exe",
+    "ParentImage": "C:\\Windows\\explorer.exe",
+    "CommandLine": "chrome.exe --profile-directory=Default",
+    "ProcessId": 2016,
+    "ParentProcessId": 1016
+  },
+  {
+    "UtcTime": "2026-09-23 03:13:52.548",
+    "EventID": 1,
+    "Computer": "SRV-FILE-01",
+    "User": "LAB\\m.okafor",
+    "Image": "C:\\Program Files\\chrome.exe",
+    "ParentImage": "C:\\Windows\\explorer.exe",
+    "CommandLine": "chrome.exe --profile-directory=Default",
+    "ProcessId": 2017,
+    "ParentProcessId": 1017
+  },
+  {
+    "UtcTime": "2026-09-23 05:55:47.548",
+    "EventID": 1,
+    "Computer": "WIN-DEV-07",
+    "User": "LAB\\j.taylor",
+    "Image": "C:\\Program Files\\teams.exe",
+    "ParentImage": "C:\\Windows\\explorer.exe",
+    "CommandLine": "teams.exe --startup",
+    "ProcessId": 2018,
+    "ParentProcessId": 1018
+  },
+  {
+    "UtcTime": "2026-09-23 06:17:19.548",
+    "EventID": 1,
+    "Computer": "SRV-FILE-01",
+    "User": "LAB\\m.okafor",
+    "Image": "C:\\Program Files\\outlook.exe",
+    "ParentImage": "C:\\Windows\\explorer.exe",
+    "CommandLine": "outlook.exe /recycle",
+    "ProcessId": 2019,
+    "ParentProcessId": 1019
+  },
+  {
+    "UtcTime": "2026-09-23 06:17:55.548",
+    "EventID": 22,
+    "Computer": "WIN-LAB-02",
+    "User": "LAB\\build-agent",
+    "Image": "C:\\Program Files\\chrome.exe",
+    "QueryName": "cdn.example"
+  },
+  {
+    "UtcTime": "2026-09-23 08:22:59.548",
+    "EventID": 1,
+    "Computer": "WIN-DEV-07",
+    "User": "LAB\\lab-user",
+    "Image": "C:\\Program Files\\git.exe",
+    "ParentImage": "C:\\Windows\\code.exe",
+    "CommandLine": "git.exe fetch --all",
+    "ProcessId": 2021,
+    "ParentProcessId": 1021
+  },
+  {
+    "UtcTime": "2026-09-23 05:35:25.548",
+    "EventID": 1,
+    "Computer": "SRV-FILE-01",
+    "User": "LAB\\m.okafor",
+    "Image": "C:\\Program Files\\outlook.exe",
+    "ParentImage": "C:\\Windows\\explorer.exe",
+    "CommandLine": "outlook.exe /recycle",
+    "ProcessId": 2023,
+    "ParentProcessId": 1023
+  },
+  {
+    "UtcTime": "2026-09-23 06:43:39.548",
+    "EventID": 1,
+    "Computer": "SRV-FILE-01",
+    "User": "LAB\\build-agent",
+    "Image": "C:\\Program Files\\outlook.exe",
+    "ParentImage": "C:\\Windows\\explorer.exe",
+    "CommandLine": "outlook.exe /recycle",
+    "ProcessId": 2024,
+    "ParentProcessId": 1024
+  },
+  {
+    "UtcTime": "2026-09-23 04:52:35.548",
+    "EventID": 1,
+    "Computer": "SRV-FILE-01",
+    "User": "LAB\\lab-user",
+    "Image": "C:\\Program Files\\explorer.exe",
+    "ParentImage": "C:\\Windows\\userinit.exe",
+    "CommandLine": "C:\\Windows\\explorer.exe",
+    "ProcessId": 2025,
+    "ParentProcessId": 1025
+  },
+  {
+    "UtcTime": "2026-09-23 05:50:21.548",
+    "EventID": 1,
+    "Computer": "WIN-LAB-01",
+    "User": "LAB\\m.okafor",
+    "Image": "C:\\Program Files\\git.exe",
+    "ParentImage": "C:\\Windows\\code.exe",
+    "CommandLine": "git.exe fetch --all",
+    "ProcessId": 2026,
+    "ParentProcessId": 1026
+  },
+  {
+    "UtcTime": "2026-09-23 06:15:37.548",
+    "EventID": 22,
+    "Computer": "WIN-LAB-02",
+    "User": "LAB\\lab-user",
+    "Image": "C:\\Program Files\\chrome.exe",
+    "QueryName": "cdn.example"
+  },
+  {
+    "UtcTime": "2026-09-23 03:11:51.548",
+    "EventID": 1,
+    "Computer": "SRV-FILE-01",
+    "User": "LAB\\j.taylor",
+    "Image": "C:\\Program Files\\outlook.exe",
+    "ParentImage": "C:\\Windows\\explorer.exe",
+    "CommandLine": "outlook.exe /recycle",
+    "ProcessId": 2029,
+    "ParentProcessId": 1029
+  },
+  {
+    "UtcTime": "2026-09-23 05:14:28.548",
+    "EventID": 1,
+    "Computer": "WIN-LAB-01",
+    "User": "LAB\\j.taylor",
+    "Image": "C:\\Program Files\\git.exe",
+    "ParentImage": "C:\\Windows\\code.exe",
+    "CommandLine": "git.exe fetch --all",
+    "ProcessId": 2030,
+    "ParentProcessId": 1030
+  },
+  {
+    "UtcTime": "2026-09-23 08:35:09.548",
+    "EventID": 1,
+    "Computer": "WIN-LAB-01",
+    "User": "LAB\\build-agent",
+    "Image": "C:\\Program Files\\chrome.exe",
+    "ParentImage": "C:\\Windows\\explorer.exe",
+    "CommandLine": "chrome.exe --profile-directory=Default",
+    "ProcessId": 2031,
+    "ParentProcessId": 1031
+  },
+  {
+    "UtcTime": "2026-09-23 04:04:13.548",
+    "EventID": 22,
+    "Computer": "SRV-FILE-01",
+    "User": "LAB\\lab-user",
+    "Image": "C:\\Program Files\\chrome.exe",
+    "QueryName": "cdn.example"
+  },
+  {
+    "UtcTime": "2026-09-23 02:51:41.548",
+    "EventID": 1,
+    "Computer": "WIN-DEV-07",
+    "User": "LAB\\j.taylor",
+    "Image": "C:\\Program Files\\chrome.exe",
+    "ParentImage": "C:\\Windows\\explorer.exe",
+    "CommandLine": "chrome.exe --profile-directory=Default",
+    "ProcessId": 2037,
+    "ParentProcessId": 1037
+  },
+  {
+    "UtcTime": "2026-09-23 07:58:41.548",
+    "EventID": 1,
+    "Computer": "WIN-LAB-02",
+    "User": "LAB\\lab-user",
+    "Image": "C:\\Program Files\\teams.exe",
+    "ParentImage": "C:\\Windows\\explorer.exe",
+    "CommandLine": "teams.exe --startup",
+    "ProcessId": 2039,
+    "ParentProcessId": 1039
+  },
+  {
+    "UtcTime": "2026-09-23 07:49:49.549",
+    "EventID": 1,
+    "Computer": "WIN-LAB-01",
+    "User": "LAB\\lab-user",
+    "Image": "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe",
+    "ParentImage": "C:\\Windows\\System32\\cmd.exe",
+    "CommandLine": "powershell.exe -nop -w hidden -enc IwAgAFMAZQBuAHQAaQBuAGUAbABGAGwAbwB3ACAAZABlAG0AbwAgAHAAYQB5AGwAbwBhAGQAIAAtACAAaABhAHIAbQBsAGUAcwBzAA==",
+    "ParentCommandLine": "cmd.exe /c start",
+    "ProcessId": 4242,
+    "ParentProcessId": 1180,
+    "Hashes": "SHA256=a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1"
+  },
+  {
+    "UtcTime": "2026-09-23 07:50:09.549",
+    "EventID": 3,
+    "Computer": "WIN-LAB-01",
+    "User": "LAB\\lab-user",
+    "Image": "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe",
+    "SourceIp": "10.0.0.5",
+    "SourcePort": 51544,
+    "DestinationIp": "192.0.2.77",
+    "DestinationPort": 443,
+    "DestinationHostname": "updates.example",
+    "Protocol": "tcp"
+  },
+  {
+    "UtcTime": "2026-09-23 07:50:24.549",
+    "EventID": 11,
+    "Computer": "WIN-LAB-01",
+    "User": "LAB\\lab-user",
+    "Image": "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe",
+    "TargetFilename": "C:\\Users\\lab-user\\AppData\\Local\\Temp\\update.exe",
+    "Hashes": "SHA256=b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2"
+  }
+]

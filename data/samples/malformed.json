@@ -1,0 +1,33 @@
+[
+  {
+    "timestamp": "2026-09-23T12:00:00Z",
+    "source": "canonical",
+    "event_type": "process_creation",
+    "hostname": "WIN-LAB-01",
+    "process_name": "notepad.exe",
+    "comment": "valid - an unknown field is preserved in raw_event, not rejected"
+  },
+  {
+    "timestamp": "2026-09-23T12:01:00Z",
+    "source": "canonical",
+    "src_ip": "10.0.0.999",
+    "comment": "rejected - 10.0.0.999 is not a valid IP address"
+  },
+  {
+    "source": "canonical",
+    "hostname": "WIN-LAB-01",
+    "comment": "rejected - no timestamp"
+  },
+  {
+    "timestamp": "2099-01-01T00:00:00Z",
+    "source": "canonical",
+    "comment": "rejected - forward-dated far beyond tolerable clock skew"
+  },
+  "not an object at all",
+  {
+    "timestamp": "2026-09-23T12:04:00Z",
+    "source": "canonical",
+    "file_hash": "deadbeef",
+    "comment": "rejected - not a valid MD5, SHA1 or SHA256 digest"
+  }
+]

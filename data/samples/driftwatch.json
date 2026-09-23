@@ -1,0 +1,14 @@
+[
+  {
+    "detected_at": "2026-09-23T07:56:24Z",
+    "asset": "WIN-LAB-01",
+    "asset_ip": "10.0.0.5",
+    "change_type": "service_exposed",
+    "port": 3389,
+    "protocol": "tcp",
+    "service": "rdp",
+    "previous_state": "closed",
+    "current_state": "open",
+    "severity": "medium"
+  }
+]

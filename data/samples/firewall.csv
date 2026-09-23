@@ -1,0 +1,6 @@
+timestamp,action,src_ip,dst_ip,src_port,dst_port,protocol,hostname,message
+2026-09-23T12:01:14Z,allow,10.0.0.5,93.184.216.34,51022,443,tcp,FW-EDGE-01,Outbound HTTPS
+2026-09-23T12:03:52Z,deny,192.0.2.77,10.0.0.5,49122,3389,tcp,FW-EDGE-01,Inbound RDP blocked
+2026-09-23T12:07:31Z,deny,192.0.2.77,10.0.0.5,49130,445,tcp,FW-EDGE-01,Inbound SMB blocked
+2026-09-23T12:11:09Z,allow,10.0.0.22,198.51.100.14,52110,53,udp,FW-EDGE-01,DNS query
+2026-09-23T12:19:44Z,allow,10.0.0.5,192.0.2.77,51544,443,tcp,FW-EDGE-01,Outbound to documentation range

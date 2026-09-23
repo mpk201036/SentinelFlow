@@ -39,9 +39,27 @@ class Migration:
     upgrade: Callable[[Connection], None]
 
 
-#: Ordered migrations applied on top of the baseline. Empty at version 1:
-#: a fresh database is created directly at the current schema.
-MIGRATIONS: tuple[Migration, ...] = ()
+def _add_ingestion_tables(connection: Connection) -> None:
+    """Version 2: import batch tracking and the rejected-record quarantine.
+
+    ``create_all`` handles new tables on its own, so this looks redundant on a
+    fresh database. It is not redundant on an existing one: running it
+    explicitly, and stamping the version, is what records that a database
+    created at version 1 has been brought forward rather than merely happening
+    to have the right tables.
+    """
+    tables = [Base.metadata.tables[name] for name in ("import_batches", "rejected_events")]
+    Base.metadata.create_all(connection, tables=tables)
+
+
+#: Ordered migrations applied on top of the baseline.
+MIGRATIONS: tuple[Migration, ...] = (
+    Migration(
+        version=2,
+        description="add import_batches and rejected_events",
+        upgrade=_add_ingestion_tables,
+    ),
+)
 
 
 @dataclass

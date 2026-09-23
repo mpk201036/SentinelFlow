@@ -41,11 +41,12 @@ from app.models.enums import (
     Severity,
     StatementType,
 )
+from app.models.ingestion import RejectionReason
 
 # ---------------------------------------------------------------------------
 # Schema versioning
 # ---------------------------------------------------------------------------
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 
 class SchemaVersion(Base):
@@ -468,6 +469,55 @@ class AIStatementRow(Base):
 
 
 # ---------------------------------------------------------------------------
+# Ingestion bookkeeping
+# ---------------------------------------------------------------------------
+class ImportBatchRow(Base):
+    """One import, identified by the hash of its content.
+
+    The unique content hash makes re-importing the same file a no-op. Note what
+    is deliberately *not* done: individual events are never deduplicated. Two
+    identical failed logons one second apart are two failures, and collapsing
+    them would quietly break every rule that counts repetitions.
+    """
+
+    __tablename__ = "import_batches"
+
+    batch_id: Mapped[UUID] = mapped_column(sa.Uuid, primary_key=True)
+    imported_at: Mapped[datetime] = mapped_column(UtcDateTime, nullable=False, index=True)
+    origin: Mapped[str] = mapped_column(sa.String(512), nullable=False)
+    adapter: Mapped[str] = mapped_column(sa.String(64), nullable=False)
+    content_hash: Mapped[str] = mapped_column(sa.String(64), nullable=False, unique=True)
+    accepted: Mapped[int] = mapped_column(sa.Integer, nullable=False, default=0)
+    rejected: Mapped[int] = mapped_column(sa.Integer, nullable=False, default=0)
+
+    rejections: Mapped[list[RejectedEventRow]] = relationship(
+        back_populates="batch", cascade="all, delete-orphan"
+    )
+
+
+class RejectedEventRow(Base):
+    """A record that could not be normalised. Kept so gaps are visible."""
+
+    __tablename__ = "rejected_events"
+
+    record_id: Mapped[UUID] = mapped_column(sa.Uuid, primary_key=True)
+    batch_id: Mapped[UUID | None] = mapped_column(
+        sa.Uuid, ForeignKey("import_batches.batch_id", ondelete="CASCADE"), index=True
+    )
+    rejected_at: Mapped[datetime] = mapped_column(UtcDateTime, nullable=False, index=True)
+    index_in_batch: Mapped[int] = mapped_column(sa.Integer, nullable=False, default=0)
+    reason: Mapped[RejectionReason] = mapped_column(
+        enum_column(RejectionReason, "rejection_reason"), nullable=False, index=True
+    )
+    detail: Mapped[str] = mapped_column(sa.Text, nullable=False)
+    payload: Mapped[str | None] = mapped_column(sa.Text)
+    origin: Mapped[str | None] = mapped_column(sa.String(512))
+    adapter: Mapped[str | None] = mapped_column(sa.String(64))
+
+    batch: Mapped[ImportBatchRow | None] = relationship(back_populates="rejections")
+
+
+# ---------------------------------------------------------------------------
 # Analyst workflow
 # ---------------------------------------------------------------------------
 class AnalystNoteRow(Base):
@@ -530,4 +580,6 @@ ALL_TABLES = [
     "ai_statements",
     "analyst_notes",
     "audit_log",
+    "import_batches",
+    "rejected_events",
 ]

@@ -1,0 +1,224 @@
+[
+  {
+    "TimeCreated": "2026-09-23T08:20:41Z",
+    "EventID": 4624,
+    "Computer": "WIN-DEV-07",
+    "TargetUserName": "j.taylor",
+    "IpAddress": "10.0.0.31",
+    "LogonType": 2,
+    "Message": "An account was successfully logged on."
+  },
+  {
+    "TimeCreated": "2026-09-23T08:35:59Z",
+    "EventID": 4624,
+    "Computer": "WIN-DEV-07",
+    "TargetUserName": "j.taylor",
+    "IpAddress": "10.0.0.21",
+    "LogonType": 2,
+    "Message": "An account was successfully logged on."
+  },
+  {
+    "TimeCreated": "2026-09-23T07:32:15Z",
+    "EventID": 4624,
+    "Computer": "WIN-LAB-02",
+    "TargetUserName": "lab-user",
+    "IpAddress": "10.0.0.55",
+    "LogonType": 2,
+    "Message": "An account was successfully logged on."
+  },
+  {
+    "TimeCreated": "2026-09-23T06:43:19Z",
+    "EventID": 4624,
+    "Computer": "WIN-DEV-07",
+    "TargetUserName": "lab-user",
+    "IpAddress": "10.0.0.37",
+    "LogonType": 2,
+    "Message": "An account was successfully logged on."
+  },
+  {
+    "TimeCreated": "2026-09-23T04:28:14Z",
+    "EventID": 4624,
+    "Computer": "SRV-FILE-01",
+    "TargetUserName": "m.okafor",
+    "IpAddress": "10.0.0.44",
+    "LogonType": 2,
+    "Message": "An account was successfully logged on."
+  },
+  {
+    "TimeCreated": "2026-09-23T04:30:06Z",
+    "EventID": 4624,
+    "Computer": "SRV-FILE-01",
+    "TargetUserName": "lab-user",
+    "IpAddress": "10.0.0.29",
+    "LogonType": 2,
+    "Message": "An account was successfully logged on."
+  },
+  {
+    "TimeCreated": "2026-09-23T06:53:12Z",
+    "EventID": 4624,
+    "Computer": "WIN-LAB-01",
+    "TargetUserName": "j.taylor",
+    "IpAddress": "10.0.0.20",
+    "LogonType": 2,
+    "Message": "An account was successfully logged on."
+  },
+  {
+    "TimeCreated": "2026-09-23T04:52:46Z",
+    "EventID": 4624,
+    "Computer": "WIN-LAB-02",
+    "TargetUserName": "lab-user",
+    "IpAddress": "10.0.0.38",
+    "LogonType": 2,
+    "Message": "An account was successfully logged on."
+  },
+  {
+    "TimeCreated": "2026-09-23T06:55:03Z",
+    "EventID": 4624,
+    "Computer": "SRV-FILE-01",
+    "TargetUserName": "m.okafor",
+    "IpAddress": "10.0.0.11",
+    "LogonType": 2,
+    "Message": "An account was successfully logged on."
+  },
+  {
+    "TimeCreated": "2026-09-23T06:36:07Z",
+    "EventID": 4624,
+    "Computer": "WIN-DEV-07",
+    "TargetUserName": "lab-user",
+    "IpAddress": "10.0.0.15",
+    "LogonType": 2,
+    "Message": "An account was successfully logged on."
+  },
+  {
+    "TimeCreated": "2026-09-23T03:41:30Z",
+    "EventID": 4624,
+    "Computer": "WIN-LAB-01",
+    "TargetUserName": "j.taylor",
+    "IpAddress": "10.0.0.35",
+    "LogonType": 2,
+    "Message": "An account was successfully logged on."
+  },
+  {
+    "TimeCreated": "2026-09-23T07:43:19Z",
+    "EventID": 4625,
+    "Computer": "WIN-LAB-01",
+    "TargetUserName": "lab-user",
+    "SubjectUserName": "-",
+    "IpAddress": "192.0.2.77",
+    "IpPort": 49000,
+    "LogonType": 3,
+    "Status": "0xC000006D",
+    "Message": "An account failed to log on."
+  },
+  {
+    "TimeCreated": "2026-09-23T07:43:49Z",
+    "EventID": 4625,
+    "Computer": "WIN-LAB-01",
+    "TargetUserName": "lab-user",
+    "SubjectUserName": "-",
+    "IpAddress": "192.0.2.77",
+    "IpPort": 49001,
+    "LogonType": 3,
+    "Status": "0xC000006D",
+    "Message": "An account failed to log on."
+  },
+  {
+    "TimeCreated": "2026-09-23T07:44:19Z",
+    "EventID": 4625,
+    "Computer": "WIN-LAB-01",
+    "TargetUserName": "lab-user",
+    "SubjectUserName": "-",
+    "IpAddress": "192.0.2.77",
+    "IpPort": 49002,
+    "LogonType": 3,
+    "Status": "0xC000006D",
+    "Message": "An account failed to log on."
+  },
+  {
+    "TimeCreated": "2026-09-23T07:44:49Z",
+    "EventID": 4625,
+    "Computer": "WIN-LAB-01",
+    "TargetUserName": "lab-user",
+    "SubjectUserName": "-",
+    "IpAddress": "192.0.2.77",
+    "IpPort": 49003,
+    "LogonType": 3,
+    "Status": "0xC000006D",
+    "Message": "An account failed to log on."
+  },
+  {
+    "TimeCreated": "2026-09-23T07:45:19Z",
+    "EventID": 4625,
+    "Computer": "WIN-LAB-01",
+    "TargetUserName": "lab-user",
+    "SubjectUserName": "-",
+    "IpAddress": "192.0.2.77",
+    "IpPort": 49004,
+    "LogonType": 3,
+    "Status": "0xC000006D",
+    "Message": "An account failed to log on."
+  },
+  {
+    "TimeCreated": "2026-09-23T07:45:49Z",
+    "EventID": 4625,
+    "Computer": "WIN-LAB-01",
+    "TargetUserName": "lab-user",
+    "SubjectUserName": "-",
+    "IpAddress": "192.0.2.77",
+    "IpPort": 49005,
+    "LogonType": 3,
+    "Status": "0xC000006D",
+    "Message": "An account failed to log on."
+  },
+  {
+    "TimeCreated": "2026-09-23T07:46:19Z",
+    "EventID": 4625,
+    "Computer": "WIN-LAB-01",
+    "TargetUserName": "lab-user",
+    "SubjectUserName": "-",
+    "IpAddress": "192.0.2.77",
+    "IpPort": 49006,
+    "LogonType": 3,
+    "Status": "0xC000006D",
+    "Message": "An account failed to log on."
+  },
+  {
+    "TimeCreated": "2026-09-23T07:46:49Z",
+    "EventID": 4625,
+    "Computer": "WIN-LAB-01",
+    "TargetUserName": "lab-user",
+    "SubjectUserName": "-",
+    "IpAddress": "192.0.2.77",
+    "IpPort": 49007,
+    "LogonType": 3,
+    "Status": "0xC000006D",
+    "Message": "An account failed to log on."
+  },
+  {
+    "TimeCreated": "2026-09-23T07:47:49Z",
+    "EventID": 4624,
+    "Computer": "WIN-LAB-01",
+    "TargetUserName": "lab-user",
+    "IpAddress": "192.0.2.77",
+    "IpPort": 49008,
+    "LogonType": 3,
+    "Message": "An account was successfully logged on."
+  },
+  {
+    "TimeCreated": "2026-09-23T07:53:24Z",
+    "EventID": 4720,
+    "Computer": "WIN-LAB-01",
+    "TargetUserName": "svc-helper",
+    "SubjectUserName": "lab-user",
+    "Message": "A user account was created."
+  },
+  {
+    "TimeCreated": "2026-09-23T07:54:04Z",
+    "EventID": 4732,
+    "Computer": "WIN-LAB-01",
+    "TargetUserName": "svc-helper",
+    "SubjectUserName": "lab-user",
+    "GroupName": "Administrators",
+    "Message": "A member was added to a security-enabled local group."
+  }
+]
