@@ -1,0 +1,46 @@
+# Security Policy
+
+SentinelFlow ingests and displays data that originates from untrusted sources —
+security logs, command lines, URLs and file paths that an attacker may control.
+Security is therefore a functional requirement of the project, not an add-on.
+
+## Threat model
+
+SentinelFlow is designed as a **local, single-analyst tool**. It ships with no
+authentication and binds to `127.0.0.1` by default. It must not be exposed to a
+network without placing authentication and TLS in front of it.
+
+The adversary the design takes seriously is an attacker who **controls the
+content of an ingested event**, and who wants to:
+
+| Attacker goal | Control in SentinelFlow |
+|---|---|
+| Execute SQL through an event field | All database access goes through SQLAlchemy with bound parameters. No string-built SQL. |
+| Inject script into the analyst's browser | Jinja2 autoescaping is on everywhere; raw event data is never rendered as HTML. |
+| Forge or flood log entries | Newlines are escaped and control characters stripped before logging; messages are truncated. See `app/core/logging.py`. |
+| Leak credentials into logs | A redaction filter rewrites password/token/key-like values on every log record. |
+| Override the AI's instructions (prompt injection) | Event data is passed to the model inside explicit untrusted-evidence delimiters, never concatenated into the system prompt, and the model's output is schema-validated before storage. The AI output can never change an alert's official severity. |
+| Exhaust memory or disk | Upload size, event count and per-field length are capped by configuration. |
+| Escape the data directory via a crafted path | Imported file paths are resolved and confined to allow-listed directories. |
+| Poison the verdict | The AI is advisory only. Severity, detections and MITRE mappings are produced by deterministic code and are always displayed separately from AI output. |
+
+## What SentinelFlow deliberately does not do
+
+* It does not execute, open or detonate any sample, file or URL found in an event.
+* It does not call out to commercial threat-intelligence services.
+* It does not make any network request at all when AI is disabled (the default).
+* It does not auto-close, auto-escalate or auto-remediate. A human decides.
+
+## Handling credentials
+
+* No credentials are required to run SentinelFlow.
+* `.env` is gitignored; only `.env.example` is committed, and it contains
+  placeholder values exclusively.
+* Sample datasets contain synthetic usernames and hosts only. Never commit real
+  logs, real hostnames or real credentials to this repository.
+
+## Reporting a vulnerability
+
+This is an educational portfolio project. If you find a security issue, please
+open a GitHub issue describing the problem and how to reproduce it. Do not
+include real credentials or real customer data in the report.

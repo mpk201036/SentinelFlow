@@ -1,0 +1,46 @@
+# --- Python ---
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# --- Virtual environments ---
+.venv/
+venv/
+env/
+
+# --- Testing / tooling caches ---
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+coverage.xml
+htmlcov/
+
+# --- SentinelFlow runtime artefacts ---
+# The database is generated locally; never commit collected event data.
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+data/*.db
+data/uploads/
+logs/
+*.log
+reports/out/
+
+# --- Secrets: never commit real configuration ---
+.env
+.env.*
+!.env.example
+
+# --- Editors / OS ---
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db

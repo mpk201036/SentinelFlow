@@ -1,0 +1,52 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  quality:
+    name: Lint, type-check and test (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.12", "3.13"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev]"
+
+      - name: Lint (ruff)
+        run: |
+          ruff check app tests
+          ruff format --check app tests
+
+      - name: Type check (mypy)
+        run: mypy app
+        continue-on-error: true
+
+      - name: Test (pytest)
+        env:
+          SENTINELFLOW_ENVIRONMENT: test
+        run: pytest --cov=app --cov-report=term-missing
+
+      - name: Verify the CLI works on a clean checkout
+        run: |
+          sentinelflow version
+          sentinelflow doctor
