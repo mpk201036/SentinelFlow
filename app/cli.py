@@ -25,6 +25,7 @@ from app.core.config import AIProvider, get_settings
 from app.core.logging import configure_logging, get_logger
 from app.database.init_db import database_status, initialize_database
 from app.database.session import get_engine, session_scope
+from app.detection import DetectionEngine, load_rules, rules_by_technique
 from app.enrichment import EnrichmentService, EnrichmentSummary
 from app.ingestion import IngestionService, generate_dataset, group_by_adapter, list_adapters
 from app.ingestion.service import IngestionOutcome
@@ -532,3 +533,131 @@ def extract(
         for name, count in sorted(summary.by_type.items(), key=lambda item: -item[1]):
             table.add_row(name, str(count))
         console.print(table)
+
+
+# ---------------------------------------------------------------------------
+# Detection
+# ---------------------------------------------------------------------------
+@app.command()
+def rules(
+    validate_only: bool = typer.Option(False, "--validate", help="Only report load errors."),
+    sync: bool = typer.Option(False, "--sync", help="Mirror the rules into the database."),
+    technique: bool = typer.Option(False, "--by-technique", help="Group by ATT&CK technique."),
+) -> None:
+    """List, validate or synchronise the detection rules."""
+    configure_logging()
+    settings = get_settings()
+    rule_set = load_rules(settings.rules_dir)
+
+    if rule_set.errors:
+        table = Table(title="Rules that failed to load", header_style="bold", title_style="bold")
+        table.add_column("File", style="cyan", no_wrap=True)
+        table.add_column("Problem")
+        for error in rule_set.errors:
+            table.add_row(error.path, error.message)
+        console.print(table)
+
+    if validate_only:
+        if rule_set.errors:
+            console.print(f"[red]{len(rule_set.errors)} rule(s) failed to load.[/red]")
+            raise typer.Exit(code=1)
+        console.print(f"[green]All {len(rule_set)} rules are valid.[/green]")
+        return
+
+    if technique:
+        mapping = rules_by_technique(rule_set.rules)
+        table = Table(title="Rules by ATT&CK technique", header_style="bold", title_style="bold")
+        table.add_column("Technique", style="cyan", no_wrap=True)
+        table.add_column("Rules")
+        for technique_id, rule_ids in mapping.items():
+            table.add_row(technique_id, ", ".join(rule_ids))
+        console.print(table)
+        return
+
+    table = Table(title="Detection rules", header_style="bold", title_style="bold")
+    table.add_column("ID", style="cyan", no_wrap=True)
+    table.add_column("Severity", no_wrap=True)
+    table.add_column("Kind", style="dim", no_wrap=True)
+    table.add_column("Name")
+    table.add_column("ATT&CK", style="dim")
+    colours = {"low": "green", "medium": "yellow", "high": "red", "critical": "bold red"}
+    for rule in rule_set.rules:
+        colour = colours.get(rule.severity.value, "white")
+        table.add_row(
+            rule.rule_id,
+            f"[{colour}]{rule.severity.value}[/{colour}]",
+            rule.kind,
+            rule.name if rule.enabled else f"{rule.name} [dim](disabled)[/dim]",
+            ", ".join(rule.mitre) or "-",
+        )
+    console.print(table)
+    console.print(f"[dim]{rule_set.summary()} - {settings.rules_dir}[/dim]")
+
+    if sync:
+        from app.database import repository
+
+        with session_scope(settings) as session:
+            for rule in rule_set.rules:
+                repository.upsert_detection_rule(session, rule)
+        console.print(f"[green]{len(rule_set)} rules synchronised to the database.[/green]")
+
+
+@app.command()
+def detect(
+    limit: int = typer.Option(1000, "--limit", "-l", help="Maximum stored events to evaluate."),
+) -> None:
+    """Run the detection rules over stored events and report what fires.
+
+    Nothing is written: alerts are created once the severity engine exists.
+    """
+    configure_logging()
+    settings = get_settings()
+    from app.database import repository
+
+    rule_set = load_rules(settings.rules_dir)
+    if rule_set.errors:
+        console.print(f"[yellow]{len(rule_set.errors)} rule(s) failed to load.[/yellow]")
+
+    with session_scope(settings) as session:
+        events = repository.list_events(session, limit=limit)
+
+    if not events:
+        console.print("[yellow]No stored events.[/yellow] Run: sentinelflow demo")
+        return
+
+    run = DetectionEngine(rule_set.enabled).evaluate_events(events)
+    console.print(f"[bold]{run.summary()}[/bold]")
+
+    if not run.detection_count:
+        console.print("[green]Nothing matched.[/green]")
+        return
+
+    by_event = {event.event_id: event for event in events}
+    table = Table(title="Detections", header_style="bold", title_style="bold")
+    table.add_column("Severity", no_wrap=True)
+    table.add_column("Rule", style="cyan", no_wrap=True)
+    table.add_column("Host", no_wrap=True)
+    table.add_column("Why it fired")
+    colours = {"low": "green", "medium": "yellow", "high": "red", "critical": "bold red"}
+
+    ordered = sorted(
+        run.all_results(),
+        key=lambda result: (-result.rule_severity.rank, result.rule_id),
+    )
+    for result in ordered[:40]:
+        event = by_event.get(result.event_id) if result.event_id else None
+        colour = colours.get(result.rule_severity.value, "white")
+        evidence = "; ".join(str(match) for match in result.matched) or result.rule_name
+        table.add_row(
+            f"[{colour}]{result.rule_severity.value}[/{colour}]",
+            result.rule_id,
+            (event.hostname if event and event.hostname else "-"),
+            evidence[:100],
+        )
+    console.print(table)
+    if len(ordered) > 40:
+        console.print(f"[dim]...and {len(ordered) - 40} more.[/dim]")
+    console.print(
+        "[dim]Detections are deterministic and reproducible. Nothing was stored: "
+        "alert creation arrives with the severity engine.[/dim]"
+    )

@@ -1,0 +1,25 @@
+# Defence evasion: activity whose purpose is to make investigation harder.
+
+id: SF-0012
+name: Event log cleared
+description: >
+  The Windows event log was cleared. There is almost no routine reason for this
+  on a modern estate - log retention is managed centrally, and clearing a log
+  destroys exactly the evidence an investigation needs. The absence of a benign
+  explanation is what makes this high severity despite being a single event.
+severity: high
+confidence: high
+mitre: [T1070.001]
+tags: [defense_evasion, anti_forensics]
+references:
+  - https://attack.mitre.org/techniques/T1070/001/
+false_positives:
+  - Deliberate log rotation during imaging or decommissioning.
+  - Some legacy maintenance scripts.
+recommendation: >
+  Establish who cleared the log and whether a maintenance window was in
+  progress. Check whether logs were being forwarded elsewhere, since a central
+  copy may still hold what was removed locally. Treat the gap itself as a
+  finding.
+detection:
+  event_types: [log_cleared]

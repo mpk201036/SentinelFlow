@@ -1,0 +1,103 @@
+# Persistence and privilege: changes that outlive the session that made them.
+
+id: SF-0005
+name: New account created
+description: >
+  A user account was created. In most environments accounts are created by a
+  joiner process on a domain controller, not on a workstation, so the host this
+  happened on matters as much as the event itself. Benign on its own; notable
+  when it follows other activity by the same actor.
+severity: medium
+confidence: medium
+mitre: [T1136.001]
+tags: [persistence, account_creation]
+references:
+  - https://attack.mitre.org/techniques/T1136/001/
+false_positives:
+  - Normal joiner processes and IT provisioning.
+  - Software installers that create local service accounts.
+recommendation: >
+  Confirm the account against the joiner record or change ticket. Check who
+  created it and whether that account normally does so. Watch for the new
+  account being added to a privileged group shortly afterwards.
+detection:
+  event_types: [account_created]
+
+---
+id: SF-0006
+name: Account added to a privileged group
+description: >
+  An account was added to a group that grants administrative rights. This is a
+  legitimate and routine administrative action, and it is also the step that
+  turns a foothold into lasting control. What separates the two is whether a
+  change record exists.
+severity: high
+confidence: high
+mitre: [T1098]
+tags: [persistence, privilege_escalation]
+references:
+  - https://attack.mitre.org/techniques/T1098/
+false_positives:
+  - Scheduled access reviews and approved administrative changes.
+  - Provisioning automation adding service accounts to required groups.
+recommendation: >
+  Find the change record. If there is none, contact the account that performed
+  the change directly rather than by email, and review what else it did.
+detection:
+  event_types: [group_membership_change]
+  all:
+    - field: raw_event.GroupName
+      operator: contains
+      value:
+        - administrators
+        - domain admins
+        - enterprise admins
+        - schema admins
+        - backup operators
+        - account operators
+        - remote desktop users
+      label: is a privileged group
+
+---
+id: SF-0013
+name: New service installed
+description: >
+  A Windows service was installed. Services survive reboots and usually run
+  with high privilege, which is why they are a common persistence mechanism -
+  and also why legitimate software installs them constantly.
+severity: medium
+confidence: medium
+mitre: [T1543.003]
+tags: [persistence, service]
+references:
+  - https://attack.mitre.org/techniques/T1543/003/
+false_positives:
+  - Any software installation, driver update or management agent deployment.
+recommendation: >
+  Check the service binary path and its signature. A service whose executable
+  lives in a user-writable directory deserves closer attention than one in
+  Program Files.
+detection:
+  event_types: [service_installed]
+
+---
+id: SF-0015
+name: Scheduled task created
+description: >
+  A scheduled task was registered. Tasks are the most common way to make code
+  run again later without staying resident, and they are equally common in
+  legitimate administration and software maintenance.
+severity: medium
+confidence: low
+mitre: [T1053.005]
+tags: [persistence, scheduled_task]
+references:
+  - https://attack.mitre.org/techniques/T1053/005/
+false_positives:
+  - Software updaters, backup tools and management agents.
+recommendation: >
+  Read the task's action and trigger. A task that runs a script from a
+  temporary or user directory is worth more attention than one calling a
+  vendor binary.
+detection:
+  event_types: [scheduled_task_created]

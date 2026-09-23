@@ -163,6 +163,15 @@ sentinelflow indicators --external      # hide internal addresses
 sentinelflow extract                    # backfill events not yet processed
 ```
 
+Run the detection rules:
+
+```bash
+sentinelflow rules                      # list the 15 shipped rules
+sentinelflow rules --validate           # exits non-zero if any file is broken
+sentinelflow rules --by-technique       # ATT&CK coverage
+sentinelflow detect                     # evaluate stored events, show what fires
+```
+
 Additional commands (`serve`, `report`) arrive with their corresponding stages.
 
 ## Configuration
@@ -212,6 +221,7 @@ where the boundaries are.
 | [docs/data-model.md](docs/data-model.md) | Domain models and where the trust boundary is enforced |
 | [docs/integrations.md](docs/integrations.md) | Supported sources and their payload contracts |
 | [docs/ioc-extraction.md](docs/ioc-extraction.md) | Indicator extraction and its false-positive controls |
+| [docs/detection-engine.md](docs/detection-engine.md) | The rule language, the engine, and what ships |
 | [docs/roadmap.md](docs/roadmap.md) | Build stages and current status |
 | [SECURITY.md](SECURITY.md) | Threat model and controls |
 

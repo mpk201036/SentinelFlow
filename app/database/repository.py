@@ -15,6 +15,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Sequence
 from datetime import datetime
+from typing import Any
 from uuid import UUID
 
 from sqlalchemy import func, select
@@ -26,6 +27,7 @@ from app.database.tables import (
     AlertRow,
     AnalystNoteRow,
     AuditLogRow,
+    DetectionRuleRow,
     EventIndicatorRow,
     EventRow,
     ImportBatchRow,
@@ -412,6 +414,46 @@ def list_audit(
     if object_id is not None:
         query = query.where(AuditLogRow.object_id == object_id)
     return [mappers.row_to_audit(row) for row in session.scalars(query).all()]
+
+
+# ---------------------------------------------------------------------------
+# Detection rule catalogue
+# ---------------------------------------------------------------------------
+def upsert_detection_rule(session: Session, rule: Any) -> DetectionRuleRow:
+    """Mirror a loaded rule into the catalogue table.
+
+    The YAML on disk stays the source of truth. This table exists so the
+    dashboard and reports can name a rule without re-reading the filesystem,
+    and so an alert raised last month can still be explained after the rule
+    file has been edited.
+    """
+    definition = rule.model_dump(mode="json", by_alias=True)
+    existing = session.get(DetectionRuleRow, rule.rule_id)
+    target = existing or DetectionRuleRow(rule_id=rule.rule_id)
+
+    target.name = rule.name
+    target.description = rule.description
+    target.severity = rule.severity
+    target.confidence = rule.confidence
+    target.enabled = rule.enabled
+    target.recommendation = rule.recommendation
+    target.mitre_technique_ids = list(rule.mitre)
+    target.definition = definition
+    target.source_path = rule.source_path
+    target.loaded_at = _now()
+
+    if existing is None:
+        session.add(target)
+    session.flush()
+    return target
+
+
+def list_detection_rules(session: Session) -> list[DetectionRuleRow]:
+    return list(session.scalars(select(DetectionRuleRow).order_by(DetectionRuleRow.rule_id)).all())
+
+
+def count_detection_rules(session: Session) -> int:
+    return int(session.scalar(select(func.count()).select_from(DetectionRuleRow)) or 0)
 
 
 # ---------------------------------------------------------------------------

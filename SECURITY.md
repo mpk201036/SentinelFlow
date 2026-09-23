@@ -23,6 +23,7 @@ content of an ingested event**, and who wants to:
 | Exhaust memory or disk | Upload size, event count and per-field length are capped by configuration. |
 | Escape the data directory via a crafted path | Paths are resolved *first* — symlinks included — and only then checked against an allow-list. Checking before resolution is the classic mistake: a path with no `..` in it can still point anywhere. |
 | Exhaust the stack with nested JSON | Nesting depth is capped and `RecursionError` is caught, so a bracket bomb becomes one rejected record rather than a crash. |
+| Execute code through a rule file | Rules are parsed with `yaml.safe_load`, never `yaml.load`, whose default loader builds Python objects from `!!python/object/apply`. No rule content is ever evaluated: a rule names an operator and hands it data. |
 | Hide an event by forward-dating it | Timestamps more than 24 hours in the future are rejected, so an event cannot be pushed off the bottom of a time-sorted queue. |
 | Poison the verdict | The AI is advisory only. Severity, detections and MITRE mappings are produced by deterministic code and are always displayed separately from AI output. |
 

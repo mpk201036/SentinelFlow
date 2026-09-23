@@ -1,0 +1,68 @@
+# Network behaviour and exposure.
+
+id: SF-0010
+name: Network service newly exposed
+description: >
+  A host began exposing a service it was not exposing before. This is a change
+  in attack surface, not evidence of an attack - it is just as likely to be a
+  developer starting a test server or an approved firewall change.
+  #
+  # Note the empty mitre list below, which is deliberate. ATT&CK describes
+  # adversary behaviour, and exposing a service is a configuration change.
+  # T1133 (External Remote Services) covers an adversary *using* such a service
+  # to get in, which this evidence does not show. Attaching it here would look
+  # thorough and be wrong.
+severity: medium
+confidence: medium
+mitre: []
+tags: [exposure, attack_surface, driftwatch]
+false_positives:
+  - Approved firewall or configuration changes.
+  - Developers running local services.
+  - Scanner coverage changing, making a long-standing service newly visible.
+recommendation: >
+  Confirm the change against a change record. If the service is remote access,
+  check for authentication attempts against it in the same window.
+detection:
+  event_types: [network_exposure_change]
+  all:
+    - field: event_type_raw
+      operator: contains
+      value: [service_exposed, port_opened, firewall_rule_changed]
+      label: increased what the host exposes
+
+---
+id: SF-0011
+name: Script interpreter connecting to an external web service
+description: >
+  A scripting engine opened an outbound connection to an external address on a
+  web port. The interpreter is what makes this notable: a browser talking to
+  the internet is unremarkable, whereas PowerShell doing so usually means a
+  script decided to.
+severity: medium
+confidence: medium
+mitre: [T1071.001]
+tags: [command_and_control, network]
+references:
+  - https://attack.mitre.org/techniques/T1071/001/
+false_positives:
+  - Package managers and deployment scripts fetching from vendor endpoints.
+  - Telemetry and licence checks performed by management tooling.
+recommendation: >
+  Resolve the destination and check it against the organisation's known
+  endpoints. Correlate with any file written on the host shortly afterwards.
+detection:
+  event_types: [network_connection]
+  all:
+    - field: process_name
+      operator: contains
+      value: [powershell, pwsh, wscript, cscript, mshta, rundll32, regsvr32, certutil, bitsadmin]
+      label: is a scripting or living-off-the-land binary
+    - field: dst_ip
+      operator: is_private
+      value: false
+      label: is not on an internal network
+    - field: dst_port
+      operator: equals
+      value: [80, 443, 8080, 8443]
+      label: is a web port

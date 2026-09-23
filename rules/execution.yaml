@@ -1,0 +1,175 @@
+# Execution: how code got to run.
+
+id: SF-0003
+name: Encoded PowerShell command
+description: >
+  PowerShell was invoked with an encoded command block. Encoding is a
+  legitimate feature - it exists so a command containing quotes and newlines
+  can be passed safely - but it also hides the command from anyone reading the
+  logs, which is why it appears in so much tooling. The command should be
+  decoded before any conclusion is drawn.
+severity: high
+confidence: high
+mitre: [T1059.001, T1027]
+tags: [execution, powershell, obfuscation]
+references:
+  - https://attack.mitre.org/techniques/T1059/001/
+false_positives:
+  - Configuration management and deployment tools frequently use -EncodedCommand.
+  - Scheduled tasks created by installers.
+recommendation: >
+  Decode the base64 block and read the command before deciding anything.
+  Confirm with the user or the owning team whether the execution was expected.
+detection:
+  event_types: [process_creation]
+  all:
+    - field: process_name
+      operator: contains
+      value: [powershell, pwsh]
+    - field: command_line
+      operator: regex
+      value: '(?:^|\s)-e(?:nc|ncodedcommand)?\s+[A-Za-z0-9+/=]{16,}'
+      label: carries an encoded command block
+
+---
+id: SF-0004
+name: Script interpreter downloading remote content
+description: >
+  A script host was invoked with a cmdlet or utility whose purpose is to fetch
+  content from the network. Downloading is not suspicious; downloading from a
+  script interpreter, unprompted, on a workstation, usually deserves a look at
+  where the content came from.
+severity: medium
+confidence: medium
+mitre: [T1105]
+tags: [execution, ingress_tool_transfer]
+references:
+  - https://attack.mitre.org/techniques/T1105/
+false_positives:
+  - Package managers, build agents and software deployment scripts.
+  - Administrators installing tooling interactively.
+recommendation: >
+  Extract the URL or host from the command line and check whether the
+  destination is one the organisation uses. Look for a file written shortly
+  afterwards.
+detection:
+  event_types: [process_creation]
+  all:
+    - field: process_name
+      operator: contains
+      value: [powershell, pwsh, cmd.exe, wscript, cscript, mshta, certutil, bitsadmin]
+    - field: command_line
+      operator: contains
+      value:
+        - invoke-webrequest
+        - invoke-restmethod
+        - downloadstring
+        - downloadfile
+        - start-bitstransfer
+        - "iwr "
+        - "curl "
+        - "wget "
+        - urlcache
+      label: invokes a download primitive
+
+---
+id: SF-0007
+name: Script interpreter spawned from an Office application
+description: >
+  A document-handling application started a scripting engine. Word does not
+  normally launch PowerShell. This parent-child relationship is one of the more
+  reliable signals available on a workstation, because the legitimate cases are
+  few and usually known to the team that deployed them.
+severity: high
+confidence: high
+mitre: [T1566.001, T1059]
+tags: [execution, phishing, suspicious_parent]
+references:
+  - https://attack.mitre.org/techniques/T1566/001/
+false_positives:
+  - Organisations that deploy document macros deliberately for automation.
+  - Add-ins that shell out as part of their normal function.
+recommendation: >
+  Retrieve the document that was open at the time, check how it arrived, and
+  preserve it before the user deletes it. Review what the spawned process did
+  next.
+detection:
+  event_types: [process_creation]
+  all:
+    - field: parent_process
+      operator: contains
+      value: [winword.exe, excel.exe, powerpnt.exe, outlook.exe, msaccess.exe, visio.exe]
+      label: was started by an Office application
+    - field: process_name
+      operator: contains
+      value: [powershell, pwsh, cmd.exe, wscript, cscript, mshta, rundll32, regsvr32]
+
+---
+id: SF-0008
+name: Executable written to or run from a temporary directory
+description: >
+  An executable or script sits in a temporary directory. Installers use these
+  paths constantly, so this is weak alone. It carries weight as corroboration,
+  because a temporary directory is writable by an unprivileged user and is not
+  somewhere software normally stays.
+severity: medium
+confidence: low
+mitre: [T1036]
+tags: [execution, defense_evasion, suspicious_path]
+references:
+  - https://attack.mitre.org/techniques/T1036/
+false_positives:
+  - Software installers and updaters, which routinely stage binaries in Temp.
+  - Build systems and test harnesses.
+recommendation: >
+  Establish what wrote the file and whether an installation was under way.
+  Check the file hash against the organisation's software inventory.
+detection:
+  event_types: [process_creation, file_creation]
+  all:
+    - field: file_path
+      operator: contains
+      value: ['\temp\', '\tmp\', '/tmp/', '\appdata\local\temp\']
+      label: is inside a temporary directory
+    - field: file_path
+      operator: endswith
+      value: ['.exe', '.dll', '.ps1', '.bat', '.cmd', '.scr', '.js', '.vbs', '.hta']
+      label: is an executable or script
+
+---
+id: SF-0014
+name: Unusually long and high-entropy command line
+description: >
+  A command line that is both very long and statistically close to random.
+  Encoded, compressed or packed content sits well above ordinary text in
+  entropy, while normal commands - even long ones - stay low because they are
+  made of words and paths. This is a heuristic and is deliberately rated low;
+  it is here to corroborate, not to accuse.
+severity: low
+confidence: low
+mitre: [T1027]
+tags: [execution, obfuscation, heuristic]
+references:
+  - https://attack.mitre.org/techniques/T1027/
+false_positives:
+  - Build tools such as MSBuild, Gradle and webpack, which emit enormous command lines.
+  - Any command carrying a long token, certificate or serialised blob.
+recommendation: >
+  Read the command line. Entropy is a hint about shape, not meaning, and a
+  human can usually tell in seconds what a long command is doing.
+detection:
+  event_types: [process_creation]
+  all:
+    - field: command_line
+      operator: length_gt
+      value: 200
+      label: is longer than 200 characters
+    - field: command_line
+      operator: entropy_gt
+      value: 4.8
+      label: has entropy above 4.8 bits per character
+  none:
+    - field: command_line
+      operator: contains
+      value: [msbuild, gradle, webpack, node_modules, cmake]
+      label: is a known build tool

@@ -19,7 +19,7 @@ Legend: **Done** · *In progress* · Planned
 |---|---|---|
 | 4 | Event ingestion: JSON, CSV, adapters, generator | **Done** |
 | 5 | IOC extraction engine | **Done** |
-| 6 | Detection engine and YAML rule set (10+ rules) | Planned |
+| 6 | Detection engine and YAML rule set (10+ rules) | **Done** |
 | 7 | MITRE ATT&CK catalogue and evidence-backed mapping | Planned |
 | 8 | Deterministic severity engine | Planned |
 | 9 | Alert correlation and potential-incident grouping | Planned |
@@ -129,3 +129,23 @@ Legend: **Done** · *In progress* · Planned
 * CLI: `indicators`, `extract`; `import` and `demo` now extract automatically
 * `docs/ioc-extraction.md`
 * 58 new tests, most of them about what must *not* be extracted
+
+## Stage 6 - delivered
+
+* `app/detection/operators.py` - the condition vocabulary. No rule content is
+  ever executed: a rule names an operator and hands it data
+* `app/detection/schema.py` - the rule language, with field names, operators,
+  regexes, numeric arguments and technique IDs all validated at load time, so a
+  typo cannot produce a rule that silently never fires
+* `app/detection/loader.py` - `yaml.safe_load` only; a broken file is reported
+  rather than taking the rest down; duplicate rule IDs are an error
+* `app/detection/engine.py` - evaluation that shows its working, and threshold
+  rules where a burst fires once, windows do not accumulate, and unattributable
+  events are not counted
+* 15 rules in `rules/`, including one that maps to no ATT&CK technique on
+  purpose
+* CLI: `rules`, `rules --validate`, `rules --by-technique`, `rules --sync`,
+  `detect`
+* `docs/detection-engine.md`
+* 92 new tests, including 9 rules firing across the demo scenario and zero on
+  120 events of benign background activity
