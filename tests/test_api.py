@@ -18,8 +18,7 @@ Covers:
 
 from __future__ import annotations
 
-import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 from uuid import uuid4
 
@@ -31,10 +30,10 @@ from app.core.config import Settings
 from app.database.init_db import initialize_database
 from app.database.session import get_engine
 
-
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
+
 
 @pytest.fixture(scope="module")
 def app_settings(tmp_path_factory: pytest.TempPathFactory) -> Settings:
@@ -58,7 +57,7 @@ def client(app_settings: Settings) -> TestClient:
 
 def _canonical_event(**overrides: Any) -> dict[str, Any]:
     base: dict[str, Any] = {
-        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "timestamp": datetime.now(UTC).isoformat(),
         "source": "canonical",
         "event_type": "process_creation",
         "hostname": "test-host",
@@ -75,6 +74,7 @@ def _canonical_event(**overrides: Any) -> dict[str, Any]:
 # App factory
 # ---------------------------------------------------------------------------
 
+
 def test_create_app_returns_asgi_app(app_settings: Settings) -> None:
     app = create_app(app_settings)
     assert callable(app)
@@ -83,6 +83,7 @@ def test_create_app_returns_asgi_app(app_settings: Settings) -> None:
 # ---------------------------------------------------------------------------
 # Health
 # ---------------------------------------------------------------------------
+
 
 def test_health_ok(client: TestClient) -> None:
     r = client.get("/api/v1/health")
@@ -105,6 +106,7 @@ def test_health_has_security_headers(client: TestClient) -> None:
 # ---------------------------------------------------------------------------
 # Rules
 # ---------------------------------------------------------------------------
+
 
 def test_rules_returns_list(client: TestClient) -> None:
     r = client.get("/api/v1/rules")
@@ -134,6 +136,7 @@ def test_rule_not_found(client: TestClient) -> None:
 # Events
 # ---------------------------------------------------------------------------
 
+
 def test_events_empty_page(client: TestClient) -> None:
     r = client.get("/api/v1/events")
     assert r.status_code == 200
@@ -153,6 +156,7 @@ def test_event_not_found(client: TestClient) -> None:
 # Alerts
 # ---------------------------------------------------------------------------
 
+
 def test_alerts_empty_page(client: TestClient) -> None:
     r = client.get("/api/v1/alerts")
     assert r.status_code == 200
@@ -168,6 +172,7 @@ def test_alert_not_found(client: TestClient) -> None:
 # ---------------------------------------------------------------------------
 # Incidents
 # ---------------------------------------------------------------------------
+
 
 def test_incidents_empty_page(client: TestClient) -> None:
     r = client.get("/api/v1/incidents")
@@ -185,6 +190,7 @@ def test_incident_not_found(client: TestClient) -> None:
 # Stats
 # ---------------------------------------------------------------------------
 
+
 def test_stats_shape(client: TestClient) -> None:
     r = client.get("/api/v1/stats")
     assert r.status_code == 200
@@ -196,6 +202,7 @@ def test_stats_shape(client: TestClient) -> None:
 # ---------------------------------------------------------------------------
 # Ingest
 # ---------------------------------------------------------------------------
+
 
 def test_ingest_canonical_event(client: TestClient) -> None:
     payload = {"events": [_canonical_event()], "source": "canonical", "triage": False}
@@ -237,6 +244,7 @@ def test_ingest_unknown_source(client: TestClient) -> None:
 # Triage
 # ---------------------------------------------------------------------------
 
+
 def test_triage_dry_run(client: TestClient) -> None:
     r = client.post("/api/v1/triage?dry_run=true")
     assert r.status_code == 200
@@ -256,17 +264,24 @@ def test_triage_live(client: TestClient) -> None:
 # Correlate
 # ---------------------------------------------------------------------------
 
+
 def test_correlate(client: TestClient) -> None:
     r = client.post("/api/v1/correlate")
     assert r.status_code == 200
     body = r.json()
-    for key in ("alerts_considered", "incidents_created", "incidents_extended", "standalone_alerts"):
+    for key in (
+        "alerts_considered",
+        "incidents_created",
+        "incidents_extended",
+        "standalone_alerts",
+    ):
         assert key in body
 
 
 # ---------------------------------------------------------------------------
 # Pagination bounds
 # ---------------------------------------------------------------------------
+
 
 def test_pagination_invalid_limit(client: TestClient) -> None:
     r = client.get("/api/v1/alerts?limit=0")
@@ -282,6 +297,7 @@ def test_pagination_oversized_limit(client: TestClient) -> None:
 # Ingest + full round-trip: events show up in alerts list
 # ---------------------------------------------------------------------------
 
+
 def test_ingest_triage_alert_visible(client: TestClient) -> None:
     """An ingested event that fires a rule should produce a visible alert."""
     event = _canonical_event(
@@ -292,7 +308,9 @@ def test_ingest_triage_alert_visible(client: TestClient) -> None:
             "JABjAD0AbgBlAHcALQBvAGIAagBlAGMAdAAgAFMAeQBzAHQAZQBtAC4ATgBlAHQALgBXAGUAYgBDAGwAaQBlAG4AdAA="
         ),
     )
-    ingest_r = client.post("/api/v1/ingest", json={"events": [event], "source": "canonical", "triage": True})
+    ingest_r = client.post(
+        "/api/v1/ingest", json={"events": [event], "source": "canonical", "triage": True}
+    )
     assert ingest_r.status_code == 200
 
     alerts_r = client.get("/api/v1/alerts")
@@ -310,6 +328,7 @@ def test_ingest_triage_alert_visible(client: TestClient) -> None:
 # ---------------------------------------------------------------------------
 # AI boundary: severity.method is never "ai"
 # ---------------------------------------------------------------------------
+
 
 def test_severity_method_is_always_deterministic(client: TestClient) -> None:
     r = client.get("/api/v1/alerts")

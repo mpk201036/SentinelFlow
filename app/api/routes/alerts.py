@@ -23,12 +23,10 @@ def list_alerts(
     open_only: bool = False,
 ) -> schemas.Page[schemas.AlertSummary]:
     from sqlalchemy import func, select
+
     from app.database.tables import AlertRow
 
-    query = (
-        select(AlertRow)
-        .order_by(AlertRow.created_at.desc())
-    )
+    query = select(AlertRow).order_by(AlertRow.created_at.desc())
     if status is not None:
         query = query.where(AlertRow.status == status)
     if severity is not None:
@@ -37,9 +35,7 @@ def list_alerts(
         open_statuses = [s for s in AlertStatus if s.is_open]
         query = query.where(AlertRow.status.in_(open_statuses))
 
-    total = int(session.scalar(
-        select(func.count()).select_from(query.subquery())
-    ) or 0)
+    total = int(session.scalar(select(func.count()).select_from(query.subquery())) or 0)
 
     alerts = repository.list_alerts(
         session,

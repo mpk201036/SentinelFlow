@@ -24,8 +24,9 @@ def list_events(
     hostname: Annotated[str | None, Query(max_length=256)] = None,
     username: Annotated[str | None, Query(max_length=256)] = None,
 ) -> schemas.Page[schemas.EventSummary]:
-    from app.database.tables import EventRow
     from sqlalchemy import func, select
+
+    from app.database.tables import EventRow
 
     query = select(EventRow).order_by(EventRow.timestamp.desc())
     if source is not None:
@@ -33,15 +34,13 @@ def list_events(
     if event_type is not None:
         query = query.where(EventRow.event_type == event_type)
     if hostname is not None:
-        from app.enrichment.extractor import _normalise_key  # type: ignore[attr-defined]
         query = query.where(EventRow.hostname_key == hostname.lower().strip())
     if username is not None:
         query = query.where(EventRow.username_key == username.lower().strip())
 
-    total = int(session.scalar(
-        select(func.count()).select_from(query.subquery())
-    ) or 0)
+    total = int(session.scalar(select(func.count()).select_from(query.subquery())) or 0)
     from app.database import mappers
+
     rows = session.scalars(query.limit(page.limit).offset(page.offset)).all()
     events = [mappers.row_to_event(r) for r in rows]
     return schemas.Page(

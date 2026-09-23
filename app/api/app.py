@@ -7,7 +7,6 @@ create the app with different settings without importing side effects.
 from __future__ import annotations
 
 from fastapi import FastAPI
-from fastapi.openapi.utils import get_openapi
 
 from app import __version__
 from app.api.errors import register_error_handlers

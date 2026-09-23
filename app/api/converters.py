@@ -11,6 +11,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 
 from app.api import schemas
+from app.detection.schema import RuleDefinition
 from app.models.ai import AIAnalysis
 from app.models.alert import Alert, AlertSeverity
 from app.models.analyst import AnalystNote
@@ -227,19 +228,19 @@ def incident_detail(item: Incident, *, alerts: Sequence[Alert] = ()) -> schemas.
     )
 
 
-def rule(definition: object) -> schemas.RuleOut:
+def rule(definition: RuleDefinition) -> schemas.RuleOut:
     return schemas.RuleOut(
-        rule_id=getattr(definition, "rule_id", "?"),
-        name=getattr(definition, "name", ""),
-        description=getattr(definition, "description", ""),
+        rule_id=definition.rule_id,
+        name=definition.name,
+        description=definition.description,
         severity=definition.severity,
         confidence=definition.confidence,
-        enabled=getattr(definition, "enabled", True),
-        kind=getattr(definition, "kind", "match"),
-        mitre=list(getattr(definition, "mitre", [])),
-        tags=list(getattr(definition, "tags", [])),
-        recommendation=getattr(definition, "recommendation", None),
-        false_positives=list(getattr(definition, "false_positives", [])),
+        enabled=definition.enabled,
+        kind=definition.kind,
+        mitre=list(definition.mitre),
+        tags=list(definition.tags),
+        recommendation=definition.recommendation,
+        false_positives=list(definition.false_positives),
     )
 
 

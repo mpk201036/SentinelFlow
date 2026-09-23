@@ -45,7 +45,7 @@ def register_error_handlers(app: FastAPI) -> None:
         ]
         return _json(
             request,
-            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status.HTTP_422_UNPROCESSABLE_CONTENT,
             "validation_error",
             "; ".join(problems) or "the request body could not be validated",
         )

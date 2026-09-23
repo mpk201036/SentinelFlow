@@ -1190,8 +1190,8 @@ def show_incident(
 
 @app.command()
 def serve(
-    host: str = typer.Option(None, "--host", help="Bind address (overrides config)."),
-    port: int = typer.Option(None, "--port", "-p", help="Port (overrides config)."),
+    host: str | None = typer.Option(None, "--host", help="Bind address (overrides config)."),
+    port: int | None = typer.Option(None, "--port", "-p", help="Port (overrides config)."),
     reload: bool = typer.Option(False, "--reload", help="Auto-reload on code changes (dev only)."),
 ) -> None:
     """Start the REST API server."""
@@ -1202,15 +1202,16 @@ def serve(
             "[red]uvicorn is required to run the server.[/red]\n"
             "Install it with:  pip install 'uvicorn[standard]'"
         )
-        raise typer.Exit(code=1)
+        # The message above is the whole explanation; the import traceback
+        # would only bury it.
+        raise typer.Exit(code=1) from None
 
     settings = get_settings()
     bind_host = host or settings.api_host
     bind_port = port or settings.api_port
 
     console.print(
-        f"[bold]SentinelFlow[/bold] {__version__}  "
-        f"[dim]http://{bind_host}:{bind_port}[/dim]"
+        f"[bold]SentinelFlow[/bold] {__version__}  [dim]http://{bind_host}:{bind_port}[/dim]"
     )
     if settings.api_docs_enabled:
         console.print(f"[dim]  API docs: http://{bind_host}:{bind_port}/docs[/dim]")

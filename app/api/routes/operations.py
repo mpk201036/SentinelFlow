@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, status
+from sqlalchemy import Engine
 
 from app.api import converters, schemas
 from app.api.dependencies import CatalogueDep, RulesDep, SessionDep, SettingsDep
@@ -24,7 +25,11 @@ def health(settings: SettingsDep, session: SessionDep) -> schemas.HealthResponse
     from app.database.init_db import current_version
 
     try:
-        version = current_version(session.get_bind())
+        # get_bind() may hand back a Connection rather than an Engine; either
+        # way, the health check must read the database this session really uses.
+        bind = session.get_bind()
+        engine = bind if isinstance(bind, Engine) else bind.engine
+        version = current_version(engine)
         db_status = "ok"
     except Exception:
         version = -1
@@ -43,6 +48,7 @@ def health(settings: SettingsDep, session: SessionDep) -> schemas.HealthResponse
 @router.get("/stats", response_model=schemas.StatsResponse)
 def stats(session: SessionDep) -> schemas.StatsResponse:
     from sqlalchemy import func, select
+
     from app.database.tables import AlertRow, DetectionRow, EventRow, RejectedEventRow
     from app.models.enums import AlertStatus
 
@@ -52,7 +58,8 @@ def stats(session: SessionDep) -> schemas.StatsResponse:
     alerts_open = int(
         session.scalar(
             select(func.count()).select_from(AlertRow).where(AlertRow.status.in_(open_statuses))
-        ) or 0
+        )
+        or 0
     )
     incidents = repository.count_incidents(session)
     indicators = repository.count_indicators(session)
@@ -132,7 +139,7 @@ def ingest(
         result = pipeline.process(outcome.events, persist=True)
         alerts_created = result.alerts_created
 
-    outcome.report.finished_at = datetime.now(timezone.utc)
+    outcome.report.finished_at = datetime.now(UTC)
 
     return converters.ingestion(outcome.report, alerts_created=alerts_created)
 

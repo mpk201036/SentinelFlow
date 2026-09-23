@@ -16,6 +16,7 @@ router = APIRouter(prefix="/incidents", tags=["incidents"])
 @router.get("", response_model=schemas.Page[schemas.IncidentSummary])
 def list_incidents(session: SessionDep, page: PageDep) -> schemas.Page[schemas.IncidentSummary]:
     from sqlalchemy import func, select
+
     from app.database.tables import IncidentRow
 
     total = int(session.scalar(select(func.count()).select_from(IncidentRow)) or 0)
