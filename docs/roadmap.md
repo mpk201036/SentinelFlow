@@ -216,6 +216,31 @@ Legend: **Done** · *In progress* · Planned
 * Error handlers that log detail and return a request ID rather than a stack
   trace
 
+### Stage 10 - post-review corrections
+
+A review after Stage 11 found defects the original tests had not caught; each
+now has a regression test.
+
+* **Every API import was recorded twice.** The route saved the batch after the
+  service already had, and the upsert counted the second save as a re-import:
+  `accepted` and `rejected` doubled and every rejection row was duplicated
+* **`create_app(settings)` ignored its settings** in every request handler.
+  Middleware used them; the dependencies read the process defaults and the
+  global engine. The app now owns its settings and database on `app.state`
+* **`max_events_per_import` did not apply to API batches**
+* **Incident pages ignored `offset`**, returning page one for every page
+* **List totals came from a separately written filter** than the page they
+  described; listing and counting now share one filter definition
+* **Username filters did not normalise like storage**, so `LAB\\lab-user`
+  found nothing; the correlation keys are now defined once, in the model
+* **`serve --host 0.0.0.0` exposed an unauthenticated API silently**; it now
+  refuses without `--expose`
+* Ingestion moved to `POST /api/v1/events` (as the brief specified) with a new
+  `POST /api/v1/events/import` for file uploads; `201` on creation, `200` on
+  an idempotent repeat
+* Documentation that claimed "the API passes an allow-list" to path
+  confinement - an API caller that did not exist - was corrected
+
 ## Stage 11 - delivered
 
 * `app/web/` - a server-rendered console on the same app: overview, alert

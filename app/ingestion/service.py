@@ -79,9 +79,10 @@ class IngestionService:
         """Import a JSON or CSV file from disk.
 
         ``allowed_roots`` confines the path to an allow-list, resolving symlinks
-        first. The API passes it, because the path comes from a request. The CLI
-        does not, because there the path comes from the operator, who already
-        has a shell.
+        first. Pass it whenever the path crossed a trust boundary. The CLI does
+        not, because there the path comes from the operator, who already has a
+        shell - and no network-reachable endpoint takes a path at all: the API
+        receives file *contents* and uses the filename only to pick a parser.
         """
         candidate = Path(path)
         if allowed_roots is not None:
@@ -152,17 +153,35 @@ class IngestionService:
         *,
         adapter_name: str | None = None,
         origin: str = "api",
-        force: bool = True,
+        force: bool = False,
         persist: bool = True,
     ) -> IngestionOutcome:
         """Import already-decoded records, as the REST API and generator do.
 
-        ``force`` defaults to True here: an API caller posting the same payload
-        twice usually means two real occurrences, not an accidental re-upload.
+        Idempotent by content unless ``force`` is set. A batch byte-identical to
+        one already accepted - same records, same timestamps - is almost always
+        a retry by a sender that did not see the first response, and treating
+        it as new would double every event in it: a flaky network turned into a
+        false brute-force alert. ``force`` exists for sources whose timestamps
+        are too coarse to tell a genuine repeat from a retry.
+
+        ``max_events_per_import`` applies here exactly as it does to files: the
+        records beyond it are refused with a stated reason, not silently kept.
         """
-        parsed = [
-            ParsedRecord(index=index, record=dict(record)) for index, record in enumerate(records)
-        ]
+        limit = self.settings.max_events_per_import
+        parsed: list[ParsedRecord] = []
+        for index, record in enumerate(records):
+            if index >= limit:
+                parsed.append(
+                    ParsedRecord(
+                        index=index,
+                        reason=RejectionReason.LIMIT_EXCEEDED,
+                        detail=f"stopped at the import limit of {limit:,} records",
+                    )
+                )
+                break
+            parsed.append(ParsedRecord(index=index, record=dict(record)))
+
         payload = json.dumps([p.record for p in parsed], default=str, sort_keys=True)
         return self._ingest(
             parsed,

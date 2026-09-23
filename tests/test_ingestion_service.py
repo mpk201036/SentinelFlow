@@ -175,7 +175,7 @@ class TestFileImport:
     def test_path_confinement_is_applied_when_roots_are_given(
         self, service: IngestionService, tmp_path: Path
     ) -> None:
-        """The API passes roots because the path comes from a request."""
+        """Any caller whose path crossed a trust boundary passes roots."""
         allowed = tmp_path / "allowed"
         allowed.mkdir()
         outside = tmp_path / "outside.json"
@@ -235,14 +235,50 @@ class TestApiStyleIngestion:
         assert outcome.accepted == 2
         assert repository.count_events(db_session) == 2
 
-    def test_repeated_api_posts_are_not_treated_as_duplicates(
+    def test_an_identical_repost_is_treated_as_a_retry(
         self, service: IngestionService, db_session: Session
     ) -> None:
-        """Two identical posts usually mean two real occurrences."""
+        """Byte-identical records with identical timestamps are a retry, not a
+        second occurrence. Accepting them would double every event: a flaky
+        network becoming a false brute-force alert."""
+        first = service.ingest_mappings([VALID], origin="api")
+        second = service.ingest_mappings([VALID], origin="api")
+        db_session.commit()
+        assert first.accepted == 1
+        assert second.report.duplicate_batch is True
+        assert repository.count_events(db_session) == 1
+
+    def test_force_accepts_a_genuine_repeat(
+        self, service: IngestionService, db_session: Session
+    ) -> None:
+        """For sources whose timestamps are too coarse to tell the two apart."""
         service.ingest_mappings([VALID], origin="api")
-        service.ingest_mappings([VALID], origin="api")
+        service.ingest_mappings([VALID], origin="api", force=True)
         db_session.commit()
         assert repository.count_events(db_session) == 2
+
+    def test_the_import_limit_applies_to_api_batches_too(
+        self, db_session: Session, db_settings: Settings
+    ) -> None:
+        """Previously only file imports honoured max_events_per_import."""
+        limited = db_settings.model_copy(update={"max_events_per_import": 3})
+        records = [{**VALID, "hostname": f"HOST-{i}"} for i in range(10)]
+        outcome = IngestionService(db_session, limited).ingest_mappings(records, origin="api")
+        assert outcome.accepted == 3
+        assert outcome.report.rejections[-1].reason is RejectionReason.LIMIT_EXCEEDED
+
+    def test_a_batch_is_recorded_once_with_true_counts(
+        self, service: IngestionService, db_session: Session
+    ) -> None:
+        outcome = service.ingest_mappings(
+            [VALID, {"broken": True}], origin="api", adapter_name="canonical"
+        )
+        db_session.commit()
+        batch = next(
+            b for b in repository.list_batches(db_session) if b.batch_id == outcome.report.batch_id
+        )
+        assert (batch.accepted, batch.rejected) == (1, 1)
+        assert len(repository.list_rejections(db_session, batch_id=batch.batch_id)) == 1
 
 
 # ---------------------------------------------------------------------------

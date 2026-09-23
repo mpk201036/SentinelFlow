@@ -22,7 +22,7 @@ from rich.console import Console
 from rich.table import Table
 
 from app import __version__
-from app.core.config import AIProvider, get_settings
+from app.core.config import AIProvider, get_settings, is_loopback_host
 from app.core.logging import configure_logging, get_logger
 from app.database.init_db import database_status, initialize_database
 from app.database.session import get_engine, session_scope
@@ -1193,8 +1193,13 @@ def serve(
     host: str | None = typer.Option(None, "--host", help="Bind address (overrides config)."),
     port: int | None = typer.Option(None, "--port", "-p", help="Port (overrides config)."),
     reload: bool = typer.Option(False, "--reload", help="Auto-reload on code changes (dev only)."),
+    expose: bool = typer.Option(
+        False,
+        "--expose",
+        help="Allow binding to a non-loopback address. SentinelFlow has NO authentication.",
+    ),
 ) -> None:
-    """Start the REST API server."""
+    """Start the analyst console and the REST API."""
     try:
         import uvicorn
     except ImportError:
@@ -1209,6 +1214,24 @@ def serve(
     settings = get_settings()
     bind_host = host or settings.api_host
     bind_port = port or settings.api_port
+
+    # There is no authentication layer, so listening beyond this machine hands
+    # the console, the event data and every write endpoint to anyone who can
+    # reach the address. That has to be a decision, not a typo in --host.
+    if not is_loopback_host(bind_host):
+        if not expose:
+            console.print(
+                f"[red]Refusing to listen on {bind_host}.[/red] SentinelFlow has no "
+                "authentication: anyone who can reach that address could read every event "
+                "and alert, and ingest or triage data.\n"
+                "Put an authenticating reverse proxy in front of it, then re-run with "
+                "[bold]--expose[/bold] if you accept that."
+            )
+            raise typer.Exit(code=2)
+        console.print(
+            f"[bold red]WARNING[/bold red] listening on {bind_host} with no authentication. "
+            "Everything here is reachable by anyone who can reach this address."
+        )
 
     console.print(
         f"[bold]SentinelFlow[/bold] {__version__}  [dim]http://{bind_host}:{bind_port}[/dim]"

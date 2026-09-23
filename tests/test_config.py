@@ -7,7 +7,15 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-from app.core.config import PROJECT_ROOT, AIProvider, Environment, LogFormat, Settings, get_settings
+from app.core.config import (
+    PROJECT_ROOT,
+    AIProvider,
+    Environment,
+    LogFormat,
+    Settings,
+    get_settings,
+    is_loopback_host,
+)
 
 pytestmark = pytest.mark.unit
 
@@ -161,3 +169,18 @@ class TestSingleton:
     def test_get_settings_is_cached(self, clean_env: pytest.MonkeyPatch) -> None:
         assert get_settings() is get_settings()
         get_settings.cache_clear()
+
+
+class TestExposure:
+    @pytest.mark.parametrize("host", ["127.0.0.1", "127.9.9.9", "localhost", "::1", "[::1]"])
+    def test_loopback_addresses(self, host: str) -> None:
+        assert is_loopback_host(host)
+
+    @pytest.mark.parametrize("host", ["0.0.0.0", "10.0.0.5", "192.0.2.77", "::", "my-server"])
+    def test_everything_else_is_exposed(self, host: str) -> None:
+        """0.0.0.0 means every interface; an unknown name cannot be assumed local."""
+        assert not is_loopback_host(host)
+
+    def test_settings_report_exposure(self, clean_env: pytest.MonkeyPatch) -> None:
+        clean_env.setenv("SENTINELFLOW_API_HOST", "0.0.0.0")
+        assert Settings(_env_file=None).api_is_exposed is True

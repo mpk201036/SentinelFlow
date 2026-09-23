@@ -22,21 +22,6 @@ def list_alerts(
     severity: Severity | None = None,
     open_only: bool = False,
 ) -> schemas.Page[schemas.AlertSummary]:
-    from sqlalchemy import func, select
-
-    from app.database.tables import AlertRow
-
-    query = select(AlertRow).order_by(AlertRow.created_at.desc())
-    if status is not None:
-        query = query.where(AlertRow.status == status)
-    if severity is not None:
-        query = query.where(AlertRow.severity_level == severity)
-    if open_only:
-        open_statuses = [s for s in AlertStatus if s.is_open]
-        query = query.where(AlertRow.status.in_(open_statuses))
-
-    total = int(session.scalar(select(func.count()).select_from(query.subquery())) or 0)
-
     alerts = repository.list_alerts(
         session,
         status=status,
@@ -47,7 +32,11 @@ def list_alerts(
     )
     return schemas.Page(
         items=[converters.alert_summary(a) for a in alerts],
-        total=total,
+        # Counted with the same filter that produced the page, so the two
+        # cannot disagree.
+        total=repository.count_alerts_matching(
+            session, status=status, severity=severity, open_only=open_only
+        ),
         limit=page.limit,
         offset=page.offset,
     )
@@ -59,9 +48,7 @@ def get_alert(alert_id: UUID, session: SessionDep) -> schemas.AlertDetail:
     if alert is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="alert not found")
 
-    event = None
-    if alert.event_ids:
-        event = repository.get_event(session, next(iter(alert.event_ids)))
+    event = repository.get_event(session, alert.primary_event_id)
 
     notes = repository.list_notes(session, alert_id=alert_id)
     analyses = repository.get_ai_analyses(session, alert_id)

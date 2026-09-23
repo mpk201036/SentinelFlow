@@ -205,7 +205,8 @@ is true (the default for local use).
 |---|---|---|
 | `GET` | `/api/v1/health` | Liveness and schema version |
 | `GET` | `/api/v1/stats` | Headline counts (shared with the dashboard) |
-| `POST` | `/api/v1/ingest` | Ingest a batch of events in any supported source format |
+| `POST` | `/api/v1/events` | Ingest a JSON batch in any supported source format; `201` when events are created |
+| `POST` | `/api/v1/events/import` | Upload a JSON, NDJSON or CSV export (multipart) |
 | `POST` | `/api/v1/triage` | Run detection, scoring and alert creation on pending events |
 | `POST` | `/api/v1/correlate` | Group related alerts into potential incidents |
 | `GET` | `/api/v1/events`, `/api/v1/events/{id}` | Events |
@@ -214,7 +215,7 @@ is true (the default for local use).
 | `GET` | `/api/v1/rules`, `/api/v1/rules/{id}` | Detection rules |
 
 ```bash
-curl -s -X POST http://127.0.0.1:8000/api/v1/ingest \
+curl -s -X POST http://127.0.0.1:8000/api/v1/events \
   -H 'Content-Type: application/json' \
   -d '{"source": "canonical", "events": [{"timestamp": "2026-09-23T13:42:10Z",
        "source": "canonical", "event_type": "process_creation",
@@ -224,6 +225,21 @@ curl -s -X POST http://127.0.0.1:8000/api/v1/ingest \
 
 The encoded command in that example decodes to a harmless comment, the same
 payload the demo scenario uses.
+
+Ingestion is **idempotent by content**: re-sending a byte-identical batch returns
+`200` with `"duplicate_batch": true` and stores nothing, because a batch identical
+down to its timestamps is almost always a retry. Set `"force": true` for sources
+whose timestamps are too coarse to tell a genuine repeat from a retry.
+
+Upload an export file instead:
+
+```bash
+curl -s -X POST http://127.0.0.1:8000/api/v1/events/import \
+  -F "file=@data/samples/firewall.csv" -F "source=firewall"
+```
+
+`sentinelflow serve` refuses to listen on anything but loopback unless you pass
+`--expose`: there is no authentication, so exposing it must be a decision.
 
 Report generation (`report`) arrives with Stage 14.
 

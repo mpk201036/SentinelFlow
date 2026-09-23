@@ -53,6 +53,23 @@ class AIProvider(StrEnum):
     OLLAMA = "ollama"
 
 
+def is_loopback_host(host: str) -> bool:
+    """Whether a bind address accepts connections only from this machine.
+
+    The whole of 127.0.0.0/8 and ::1 count, as does "localhost". Anything
+    else - including 0.0.0.0, which means every interface - does not.
+    """
+    import ipaddress
+
+    candidate = host.strip().strip("[]").lower()
+    if candidate == "localhost":
+        return True
+    try:
+        return ipaddress.ip_address(candidate).is_loopback
+    except ValueError:
+        return False
+
+
 def _resolve(path: str | Path) -> Path:
     """Resolve a possibly-relative path against the project root."""
     candidate = Path(path).expanduser()
@@ -217,7 +234,7 @@ class Settings(BaseSettings):
         SentinelFlow has no authentication, so this is worth saying out loud at
         startup rather than discovering later.
         """
-        return self.api_host not in ("127.0.0.1", "localhost", "::1")
+        return not is_loopback_host(self.api_host)
 
     # ------------------------------------------------------------------
     # Safe display

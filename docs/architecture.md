@@ -117,7 +117,7 @@ the important points are:
 
 SentinelFlow is built so sibling projects can feed it:
 
-* `POST /api/events` accepts any source that can speak JSON — including
+* `POST /api/v1/events` accepts any source that can speak JSON — including
   **DriftWatch** (network exposure changes) and **GhostCredential** (decoy
   credential access).
 * A source-specific adapter in `app/ingestion/adapters/` maps that source's

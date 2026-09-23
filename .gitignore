@@ -44,3 +44,9 @@ reports/out/
 .vscode/
 .DS_Store
 Thumbs.db
+
+# --- Local tooling, never part of the product ---
+# graphify output is regenerable and goes stale with every commit.
+graphify-out/
+# Claude Code workspace configuration (contains machine-specific paths).
+.claude/

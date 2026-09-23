@@ -42,7 +42,7 @@ from app.database.tables import (
 from app.models.ai import AIAnalysis
 from app.models.alert import Alert
 from app.models.analyst import AnalystNote, AuditEntry
-from app.models.enums import AlertStatus, IncidentStatus, IndicatorType, Severity
+from app.models.enums import AlertStatus, EventType, IncidentStatus, IndicatorType, Severity
 from app.models.event import SecurityEvent
 from app.models.incident import Incident
 from app.models.indicator import Indicator
@@ -81,21 +81,25 @@ def get_event(session: Session, event_id: UUID) -> SecurityEvent | None:
     return mappers.row_to_event(row) if row else None
 
 
-def list_events(
-    session: Session,
+def _event_filters(
+    query: sa.Select[Any],
     *,
     source: str | None = None,
+    event_type: EventType | None = None,
     hostname_key: str | None = None,
     username_key: str | None = None,
     since: datetime | None = None,
     until: datetime | None = None,
-    limit: int = 100,
-    offset: int = 0,
-) -> list[SecurityEvent]:
-    """Query events by the indexed correlation keys."""
-    query = select(EventRow).order_by(EventRow.timestamp.desc())
+) -> sa.Select[Any]:
+    """The one definition of an event filter, shared by listing and counting.
+
+    A count computed from a separately written filter is a count that can
+    quietly disagree with the page it describes.
+    """
     if source is not None:
         query = query.where(EventRow.source == source)
+    if event_type is not None:
+        query = query.where(EventRow.event_type == event_type)
     if hostname_key is not None:
         query = query.where(EventRow.hostname_key == hostname_key)
     if username_key is not None:
@@ -104,8 +108,52 @@ def list_events(
         query = query.where(EventRow.timestamp >= since)
     if until is not None:
         query = query.where(EventRow.timestamp <= until)
+    return query
+
+
+def list_events(
+    session: Session,
+    *,
+    source: str | None = None,
+    event_type: EventType | None = None,
+    hostname_key: str | None = None,
+    username_key: str | None = None,
+    since: datetime | None = None,
+    until: datetime | None = None,
+    limit: int = 100,
+    offset: int = 0,
+) -> list[SecurityEvent]:
+    """Query events by the indexed correlation keys, newest first."""
+    query = _event_filters(
+        select(EventRow),
+        source=source,
+        event_type=event_type,
+        hostname_key=hostname_key,
+        username_key=username_key,
+        since=since,
+        until=until,
+    ).order_by(EventRow.timestamp.desc())
     rows: Sequence[EventRow] = session.scalars(query.limit(limit).offset(offset)).all()
     return [mappers.row_to_event(row) for row in rows]
+
+
+def count_events_matching(
+    session: Session,
+    *,
+    source: str | None = None,
+    event_type: EventType | None = None,
+    hostname_key: str | None = None,
+    username_key: str | None = None,
+) -> int:
+    """Total for the same filter ``list_events`` applies."""
+    query = _event_filters(
+        select(func.count()).select_from(EventRow),
+        source=source,
+        event_type=event_type,
+        hostname_key=hostname_key,
+        username_key=username_key,
+    )
+    return int(session.scalar(query) or 0)
 
 
 def count_events(session: Session) -> int:
@@ -291,6 +339,26 @@ def get_alert(session: Session, alert_id: UUID) -> Alert | None:
     return mappers.row_to_alert(row) if row else None
 
 
+def _alert_filters(
+    query: sa.Select[Any],
+    *,
+    status: AlertStatus | None = None,
+    severity: Severity | None = None,
+    incident_id: UUID | None = None,
+    open_only: bool = False,
+) -> sa.Select[Any]:
+    """The one definition of an alert filter, shared by listing and counting."""
+    if status is not None:
+        query = query.where(AlertRow.status == status)
+    if severity is not None:
+        query = query.where(AlertRow.severity_level == severity)
+    if incident_id is not None:
+        query = query.where(AlertRow.incident_id == incident_id)
+    if open_only:
+        query = query.where(AlertRow.status.in_([s for s in AlertStatus if s.is_open]))
+    return query
+
+
 def list_alerts(
     session: Session,
     *,
@@ -301,18 +369,34 @@ def list_alerts(
     limit: int = 50,
     offset: int = 0,
 ) -> list[Alert]:
-    query = select(AlertRow).options(*_ALERT_LOADERS).order_by(AlertRow.created_at.desc())
-    if status is not None:
-        query = query.where(AlertRow.status == status)
-    if severity is not None:
-        query = query.where(AlertRow.severity_level == severity)
-    if incident_id is not None:
-        query = query.where(AlertRow.incident_id == incident_id)
-    if open_only:
-        open_statuses = [s for s in AlertStatus if s.is_open]
-        query = query.where(AlertRow.status.in_(open_statuses))
+    query = _alert_filters(
+        select(AlertRow).options(*_ALERT_LOADERS),
+        status=status,
+        severity=severity,
+        incident_id=incident_id,
+        open_only=open_only,
+    ).order_by(AlertRow.created_at.desc())
     rows = session.scalars(query.limit(limit).offset(offset)).all()
     return [mappers.row_to_alert(row) for row in rows]
+
+
+def count_alerts_matching(
+    session: Session,
+    *,
+    status: AlertStatus | None = None,
+    severity: Severity | None = None,
+    incident_id: UUID | None = None,
+    open_only: bool = False,
+) -> int:
+    """Total for the same filter ``list_alerts`` applies."""
+    query = _alert_filters(
+        select(func.count()).select_from(AlertRow),
+        status=status,
+        severity=severity,
+        incident_id=incident_id,
+        open_only=open_only,
+    )
+    return int(session.scalar(query) or 0)
 
 
 def events_awaiting_triage(session: Session, *, limit: int = 1_000) -> list[SecurityEvent]:
@@ -531,12 +615,13 @@ def get_incident(session: Session, incident_id: UUID) -> Incident | None:
     return mappers.row_to_incident(row) if row else None
 
 
-def list_incidents(session: Session, *, limit: int = 50) -> list[Incident]:
+def list_incidents(session: Session, *, limit: int = 50, offset: int = 0) -> list[Incident]:
     rows = session.scalars(
         select(IncidentRow)
         .options(selectinload(IncidentRow.alerts))
         .order_by(IncidentRow.created_at.desc())
         .limit(limit)
+        .offset(offset)
     ).all()
     return [mappers.row_to_incident(row) for row in rows]
 

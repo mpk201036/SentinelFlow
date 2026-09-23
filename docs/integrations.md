@@ -34,7 +34,7 @@ what SentinelFlow accepts.
 
 ### DriftWatch — network exposure changes
 
-`POST /api/events?source=driftwatch`, or `sentinelflow import drift.json --source driftwatch`.
+`POST /api/v1/events` with `"source": "driftwatch"`, an upload to `POST /api/v1/events/import`, or `sentinelflow import drift.json --source driftwatch`.
 
 ```json
 {

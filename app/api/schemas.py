@@ -305,6 +305,15 @@ class IngestRequest(ApiModel):
     triage: bool = Field(
         default=True, description="Run detection and scoring on the accepted events."
     )
+    force: bool = Field(
+        default=False,
+        description=(
+            "Accept this batch even if identical content was already ingested. Off by "
+            "default: an identical batch is almost always a retry, and accepting it would "
+            "double every event. Use it for sources whose timestamps are too coarse to "
+            "tell a genuine repeat from a retry."
+        ),
+    )
 
 
 class RejectionOut(ApiModel):

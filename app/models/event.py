@@ -63,6 +63,28 @@ from app.models.enums import Confidence, EventType, Severity
 _URL_RE = re.compile(r"^[A-Za-z][A-Za-z0-9+.\-]*://\S+$")
 
 
+def username_key(username: str | None) -> str | None:
+    """The key an account is correlated and queried by.
+
+    ``LAB\\Lab-User``, ``lab-user`` and ``LAB/lab-user`` are one account, and
+    ``WIN-LAB-01$`` is the machine account ``win-lab-01``. Defined once, here,
+    so that storage and every query normalise the same way - a filter that
+    normalised differently from storage would quietly find nothing.
+    """
+    if not username:
+        return None
+    user = username.strip().lower()
+    for separator in ("\\", "/"):
+        if separator in user:
+            user = user.rsplit(separator, 1)[-1]
+    return user.removesuffix("$") or None
+
+
+def hostname_key(hostname: str | None) -> str | None:
+    """The key a host is correlated and queried by."""
+    return hostname.strip().lower() or None if hostname else None
+
+
 class SecurityEvent(EvidenceModel):
     """A single normalised observation from any source."""
 
@@ -243,18 +265,12 @@ class SecurityEvent(EvidenceModel):
     @property
     def hostname_key(self) -> str | None:
         """Case-insensitive host key. ``WIN-LAB-01`` and ``win-lab-01`` are one host."""
-        return self.hostname.lower() if self.hostname else None
+        return hostname_key(self.hostname)
 
     @property
     def username_key(self) -> str | None:
         """Case-insensitive user key with any domain prefix removed."""
-        if not self.username:
-            return None
-        user = self.username.lower()
-        for separator in ("\\", "/"):
-            if separator in user:
-                user = user.rsplit(separator, 1)[-1]
-        return user.removesuffix("$") or None
+        return username_key(self.username)
 
     @property
     def process_name_key(self) -> str | None:

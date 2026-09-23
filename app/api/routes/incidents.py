@@ -15,15 +15,12 @@ router = APIRouter(prefix="/incidents", tags=["incidents"])
 
 @router.get("", response_model=schemas.Page[schemas.IncidentSummary])
 def list_incidents(session: SessionDep, page: PageDep) -> schemas.Page[schemas.IncidentSummary]:
-    from sqlalchemy import func, select
-
-    from app.database.tables import IncidentRow
-
-    total = int(session.scalar(select(func.count()).select_from(IncidentRow)) or 0)
-    incidents = repository.list_incidents(session, limit=page.limit)
+    # Offset was previously accepted, echoed back, and ignored: every page
+    # returned the first page again.
+    incidents = repository.list_incidents(session, limit=page.limit, offset=page.offset)
     return schemas.Page(
         items=[converters.incident_summary(i) for i in incidents],
-        total=total,
+        total=repository.count_incidents(session),
         limit=page.limit,
         offset=page.offset,
     )

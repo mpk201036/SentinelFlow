@@ -1,18 +1,15 @@
-"""Operational endpoints: health, stats, ingest, triage, correlate."""
+"""Operational endpoints: health, stats, triage, correlate.
+
+Ingestion lives on the events collection: ``POST /api/v1/events``.
+"""
 
 from __future__ import annotations
-
-from datetime import UTC, datetime
 
 from fastapi import APIRouter, status
 from sqlalchemy import Engine
 
-from app.api import converters, schemas
+from app.api import schemas
 from app.api.dependencies import CatalogueDep, RulesDep, SessionDep, SettingsDep
-from app.database import repository
-from app.ingestion.adapters import UnknownAdapterError
-from app.ingestion.service import IngestionService
-from app.models.ingestion import RejectionReason
 from app.services.correlation import CorrelationService
 from app.services.pipeline import TriagePipeline
 
@@ -64,40 +61,6 @@ def stats(session: SessionDep, catalogue: CatalogueDep) -> schemas.StatsResponse
         top_hosts=dict(data.top_hosts),
         techniques_observed=data.techniques_observed,
     )
-
-
-@router.post("/ingest", response_model=schemas.IngestResponse, status_code=status.HTTP_200_OK)
-def ingest(
-    body: schemas.IngestRequest,
-    session: SessionDep,
-    settings: SettingsDep,
-    rules: RulesDep,
-    catalogue: CatalogueDep,
-) -> schemas.IngestResponse:
-    """Ingest a batch of events. Runs triage immediately unless ``triage=false``."""
-    svc = IngestionService(session, settings)
-    outcome = svc.ingest_mappings(
-        body.events,
-        adapter_name=body.source,
-        origin="api",
-        force=False,
-        persist=True,
-    )
-
-    if any(r.reason == RejectionReason.UNKNOWN_SOURCE for r in outcome.report.rejections):
-        raise UnknownAdapterError(body.source or "auto")
-
-    repository.save_import_batch(session, outcome.report)
-
-    alerts_created = 0
-    if body.triage and outcome.events:
-        pipeline = TriagePipeline(session, settings, rules=rules, catalogue=catalogue)
-        result = pipeline.process(outcome.events, persist=True)
-        alerts_created = result.alerts_created
-
-    outcome.report.finished_at = datetime.now(UTC)
-
-    return converters.ingestion(outcome.report, alerts_created=alerts_created)
 
 
 @router.post("/triage", response_model=schemas.TriageResponse, status_code=status.HTTP_200_OK)
