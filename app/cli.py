@@ -29,6 +29,7 @@ from app.detection import DetectionEngine, load_rules, rules_by_technique
 from app.enrichment import EnrichmentService, EnrichmentSummary
 from app.ingestion import IngestionService, generate_dataset, group_by_adapter, list_adapters
 from app.ingestion.service import IngestionOutcome
+from app.mitre import MitreMapper, load_catalogue, tactic_coverage, validate_rule_techniques
 from app.models.enums import IndicatorType
 from app.models.ingestion import IngestionReport
 
@@ -205,6 +206,17 @@ def doctor() -> None:
     except Exception as exc:
         failures += 1
         table.add_row("database schema", _FAIL, f"{type(exc).__name__}: {exc}")
+
+    # --- ATT&CK catalogue -----------------------------------------------
+    catalogue = load_catalogue()
+    if catalogue.errors:
+        table.add_row("ATT&CK catalogue", _WARN, "; ".join(catalogue.errors)[:80])
+    else:
+        table.add_row(
+            "ATT&CK catalogue",
+            _OK,
+            f"{catalogue.summary()} (version {catalogue.version})",
+        )
 
     # --- Optional AI ----------------------------------------------------
     if not settings.ai_active:
@@ -558,10 +570,22 @@ def rules(
         console.print(table)
 
     if validate_only:
+        catalogue = load_catalogue()
+        unmapped = validate_rule_techniques(rule_set.rules, catalogue)
+        for problem in unmapped:
+            console.print(f"[yellow]ATT&CK:[/yellow] {problem}")
         if rule_set.errors:
             console.print(f"[red]{len(rule_set.errors)} rule(s) failed to load.[/red]")
             raise typer.Exit(code=1)
-        console.print(f"[green]All {len(rule_set)} rules are valid.[/green]")
+        if unmapped:
+            console.print(
+                f"[yellow]{len(unmapped)} technique reference(s) are not in the catalogue.[/yellow]"
+            )
+            raise typer.Exit(code=1)
+        console.print(
+            f"[green]All {len(rule_set)} rules are valid, and every ATT&CK "
+            f"reference resolves against the catalogue.[/green]"
+        )
         return
 
     if technique:
@@ -657,7 +681,111 @@ def detect(
     console.print(table)
     if len(ordered) > 40:
         console.print(f"[dim]...and {len(ordered) - 40} more.[/dim]")
+    catalogue = load_catalogue()
+    mapping = MitreMapper(catalogue).map_detections(run.all_results(), by_event)
+    if mapping.mappings:
+        attack = Table(title="ATT&CK techniques observed", header_style="bold", title_style="bold")
+        attack.add_column("Technique", style="cyan", no_wrap=True)
+        attack.add_column("Name")
+        attack.add_column("Tactics", style="dim")
+        attack.add_column("From rule", style="dim", no_wrap=True)
+        for item in sorted(mapping.mappings, key=lambda m: m.technique_id):
+            attack.add_row(
+                item.technique_id,
+                item.technique.name,
+                ", ".join(item.technique.tactics),
+                item.source_rule_id or "-",
+            )
+        console.print(attack)
+        console.print(
+            "[dim]Every mapping carries a stated reason drawn from the evidence. "
+            "Run 'sentinelflow mitre --coverage' for the rule set's tactic coverage.[/dim]"
+        )
+    if mapping.unknown_techniques:
+        console.print(
+            f"[yellow]{len(set(mapping.unknown_techniques))} technique(s) were not mapped "
+            "because the catalogue cannot name them.[/yellow]"
+        )
+
     console.print(
         "[dim]Detections are deterministic and reproducible. Nothing was stored: "
         "alert creation arrives with the severity engine.[/dim]"
     )
+
+
+# ---------------------------------------------------------------------------
+# MITRE ATT&CK
+# ---------------------------------------------------------------------------
+@app.command()
+def mitre(
+    coverage: bool = typer.Option(False, "--coverage", help="Show tactic coverage by rule."),
+    sync: bool = typer.Option(False, "--sync", help="Mirror the catalogue into the database."),
+    technique_id: str | None = typer.Option(None, "--technique", "-t", help="Show one technique."),
+) -> None:
+    """Inspect the local ATT&CK catalogue and the rule set's coverage."""
+    configure_logging()
+    settings = get_settings()
+    catalogue = load_catalogue()
+
+    if catalogue.errors:
+        for problem in catalogue.errors:
+            console.print(f"[yellow]Catalogue:[/yellow] {problem}")
+        if not catalogue.techniques:
+            raise typer.Exit(code=1)
+
+    if technique_id:
+        technique = catalogue.resolve(technique_id)
+        if technique is None:
+            console.print(f"[red]{technique_id} is not in the catalogue.[/red]")
+            raise typer.Exit(code=1)
+        console.print(f"[bold cyan]{technique.technique_id}[/bold cyan]  {technique.name}")
+        console.print(f"Tactics:     {', '.join(technique.tactics) or '-'}")
+        console.print(f"Reference:   {technique.url}")
+        if technique.is_subtechnique:
+            console.print(f"Parent:      {technique.parent_id}")
+        if technique.description:
+            console.print(f"\n{technique.description}")
+        return
+
+    if coverage:
+        rule_set = load_rules(settings.rules_dir)
+        mapped = tactic_coverage(rule_set.rules, catalogue)
+        table = Table(title="ATT&CK tactic coverage", header_style="bold", title_style="bold")
+        table.add_column("Tactic", style="cyan", no_wrap=True)
+        table.add_column("Rules", justify="right")
+        table.add_column("Which")
+        for tactic, rule_ids in mapped.items():
+            marker = "[green]" if rule_ids else "[dim]"
+            close = "[/green]" if rule_ids else "[/dim]"
+            table.add_row(
+                f"{marker}{tactic}{close}",
+                str(len(rule_ids)),
+                ", ".join(rule_ids) if rule_ids else "no coverage",
+            )
+        console.print(table)
+        console.print(
+            "[dim]Coverage is a map of what the rules can see, not a score. "
+            "Every real estate has gaps; naming them is more useful than hiding them.[/dim]"
+        )
+        return
+
+    table = Table(title="ATT&CK catalogue", header_style="bold", title_style="bold")
+    table.add_column("Technique", style="cyan", no_wrap=True)
+    table.add_column("Name")
+    table.add_column("Tactics", style="dim")
+    for technique in sorted(catalogue.techniques.values(), key=lambda t: t.technique_id):
+        table.add_row(technique.technique_id, technique.name, ", ".join(technique.tactics))
+    console.print(table)
+    console.print(
+        f"[dim]{catalogue.summary()} - {catalogue.source}, version {catalogue.version}[/dim]"
+    )
+    if catalogue.attribution:
+        console.print(f"[dim]{catalogue.attribution[:200]}[/dim]")
+
+    if sync:
+        from app.database import repository
+
+        with session_scope(settings) as session:
+            for technique in catalogue.techniques.values():
+                repository.upsert_technique(session, technique)
+        console.print(f"[green]{len(catalogue)} techniques synchronised to the database.[/green]")

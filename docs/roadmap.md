@@ -20,7 +20,7 @@ Legend: **Done** · *In progress* · Planned
 | 4 | Event ingestion: JSON, CSV, adapters, generator | **Done** |
 | 5 | IOC extraction engine | **Done** |
 | 6 | Detection engine and YAML rule set (10+ rules) | **Done** |
-| 7 | MITRE ATT&CK catalogue and evidence-backed mapping | Planned |
+| 7 | MITRE ATT&CK catalogue and evidence-backed mapping | **Done** |
 | 8 | Deterministic severity engine | Planned |
 | 9 | Alert correlation and potential-incident grouping | Planned |
 
@@ -149,3 +149,19 @@ Legend: **Done** · *In progress* · Planned
 * `docs/detection-engine.md`
 * 92 new tests, including 9 rules firing across the demo scenario and zero on
   120 events of benign background activity
+
+## Stage 7 - delivered
+
+* `data/mitre/techniques.json` - a curated offline subset: 30 techniques, all
+  14 tactics, with its own provenance and attribution recorded. No network call
+* `app/mitre/catalogue.py` - loads and validates it; a missing or broken file
+  degrades rather than crashing, and `doctor` reports the gap
+* `app/mitre/mapper.py` - builds every reason from the evidence that produced
+  it, refuses techniques the catalogue cannot name, and says so when it falls
+  back from a sub-technique to its parent
+* Anti-fabrication enforced at three levels: rule validation, the mapper, and a
+  database foreign key
+* CLI: `mitre`, `mitre --coverage`, `mitre --technique`, `mitre --sync`;
+  `rules --validate` now also checks every ATT&CK reference resolves
+* `docs/mitre-attack.md`
+* 37 new tests, most of them about what the mapper refuses to claim

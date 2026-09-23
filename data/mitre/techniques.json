@@ -1,0 +1,205 @@
+{
+  "source": "MITRE ATT&CK Enterprise",
+  "attribution": "MITRE ATT&CK(R) is a registered trademark of The MITRE Corporation. This file is a curated offline subset, retained locally so SentinelFlow needs no network access. Technique identifiers, names and tactic assignments are from the public ATT&CK Enterprise matrix; the summaries are written for this project rather than copied. See https://attack.mitre.org/",
+  "matrix": "enterprise",
+  "version": "curated-subset-1",
+  "retrieved": "2026-09-23",
+  "tactics": [
+    {"id": "TA0043", "name": "Reconnaissance", "shortname": "reconnaissance"},
+    {"id": "TA0042", "name": "Resource Development", "shortname": "resource-development"},
+    {"id": "TA0001", "name": "Initial Access", "shortname": "initial-access"},
+    {"id": "TA0002", "name": "Execution", "shortname": "execution"},
+    {"id": "TA0003", "name": "Persistence", "shortname": "persistence"},
+    {"id": "TA0004", "name": "Privilege Escalation", "shortname": "privilege-escalation"},
+    {"id": "TA0005", "name": "Defense Evasion", "shortname": "defense-evasion"},
+    {"id": "TA0006", "name": "Credential Access", "shortname": "credential-access"},
+    {"id": "TA0007", "name": "Discovery", "shortname": "discovery"},
+    {"id": "TA0008", "name": "Lateral Movement", "shortname": "lateral-movement"},
+    {"id": "TA0009", "name": "Collection", "shortname": "collection"},
+    {"id": "TA0011", "name": "Command and Control", "shortname": "command-and-control"},
+    {"id": "TA0010", "name": "Exfiltration", "shortname": "exfiltration"},
+    {"id": "TA0040", "name": "Impact", "shortname": "impact"}
+  ],
+  "techniques": [
+    {
+      "id": "T1003",
+      "name": "OS Credential Dumping",
+      "tactics": ["Credential Access"],
+      "description": "Extracting account credentials from operating system stores such as LSASS memory, the SAM database or cached domain credentials."
+    },
+    {
+      "id": "T1021.001",
+      "name": "Remote Services: Remote Desktop Protocol",
+      "tactics": ["Lateral Movement"],
+      "description": "Using RDP with valid credentials to interact with a remote host as a logged-on user."
+    },
+    {
+      "id": "T1027",
+      "name": "Obfuscated Files or Information",
+      "tactics": ["Defense Evasion"],
+      "description": "Making a file or command harder to read or detect by encoding, encrypting, packing or otherwise obscuring its contents."
+    },
+    {
+      "id": "T1036",
+      "name": "Masquerading",
+      "tactics": ["Defense Evasion"],
+      "description": "Making an artefact appear legitimate by manipulating its name, location, extension or metadata."
+    },
+    {
+      "id": "T1053.005",
+      "name": "Scheduled Task/Job: Scheduled Task",
+      "tactics": ["Execution", "Persistence", "Privilege Escalation"],
+      "description": "Registering a Windows scheduled task so code runs at a chosen time, on a trigger, or after a reboot."
+    },
+    {
+      "id": "T1057",
+      "name": "Process Discovery",
+      "tactics": ["Discovery"],
+      "description": "Enumerating running processes to understand what software and defences are present on a host."
+    },
+    {
+      "id": "T1059",
+      "name": "Command and Scripting Interpreter",
+      "tactics": ["Execution"],
+      "description": "Running commands or scripts through an interpreter such as a shell, PowerShell or a scripting engine."
+    },
+    {
+      "id": "T1059.001",
+      "name": "Command and Scripting Interpreter: PowerShell",
+      "tactics": ["Execution"],
+      "description": "Using PowerShell to run commands, scripts or in-memory code on a Windows host."
+    },
+    {
+      "id": "T1059.003",
+      "name": "Command and Scripting Interpreter: Windows Command Shell",
+      "tactics": ["Execution"],
+      "description": "Using cmd.exe to run commands, batch files or chained tooling on a Windows host."
+    },
+    {
+      "id": "T1070.001",
+      "name": "Indicator Removal: Clear Windows Event Logs",
+      "tactics": ["Defense Evasion"],
+      "description": "Clearing Windows event logs to remove the record of activity from the host."
+    },
+    {
+      "id": "T1071.001",
+      "name": "Application Layer Protocol: Web Protocols",
+      "tactics": ["Command and Control"],
+      "description": "Communicating with external infrastructure over HTTP or HTTPS so the traffic blends with ordinary web browsing."
+    },
+    {
+      "id": "T1074.001",
+      "name": "Data Staged: Local Data Staging",
+      "tactics": ["Collection"],
+      "description": "Collecting data into one location on the host before moving it elsewhere."
+    },
+    {
+      "id": "T1078",
+      "name": "Valid Accounts",
+      "tactics": ["Defense Evasion", "Initial Access", "Persistence", "Privilege Escalation"],
+      "description": "Using legitimate credentials to gain or keep access, which makes the activity resemble normal use."
+    },
+    {
+      "id": "T1082",
+      "name": "System Information Discovery",
+      "tactics": ["Discovery"],
+      "description": "Gathering details about a host such as its version, hardware, domain membership and configuration."
+    },
+    {
+      "id": "T1087",
+      "name": "Account Discovery",
+      "tactics": ["Discovery"],
+      "description": "Enumerating local or domain accounts and groups to find targets and understand privilege."
+    },
+    {
+      "id": "T1098",
+      "name": "Account Manipulation",
+      "tactics": ["Persistence", "Privilege Escalation"],
+      "description": "Changing an existing account - its group membership, credentials or permissions - to keep or widen access."
+    },
+    {
+      "id": "T1105",
+      "name": "Ingress Tool Transfer",
+      "tactics": ["Command and Control"],
+      "description": "Bringing files or tooling onto a host from an external system."
+    },
+    {
+      "id": "T1110",
+      "name": "Brute Force",
+      "tactics": ["Credential Access"],
+      "description": "Attempting to obtain credentials by systematically guessing passwords, including spraying and stuffing."
+    },
+    {
+      "id": "T1112",
+      "name": "Modify Registry",
+      "tactics": ["Defense Evasion"],
+      "description": "Changing registry keys or values to alter configuration, hide data or disable protections."
+    },
+    {
+      "id": "T1133",
+      "name": "External Remote Services",
+      "tactics": ["Initial Access", "Persistence"],
+      "description": "Using externally reachable remote access services such as VPN or RDP to enter or return to an environment."
+    },
+    {
+      "id": "T1136.001",
+      "name": "Create Account: Local Account",
+      "tactics": ["Persistence"],
+      "description": "Creating a local account on a host so access survives the loss of the original credential."
+    },
+    {
+      "id": "T1140",
+      "name": "Deobfuscate/Decode Files or Information",
+      "tactics": ["Defense Evasion"],
+      "description": "Decoding or decrypting content on the host so that what was transferred does not resemble what is executed."
+    },
+    {
+      "id": "T1218.005",
+      "name": "System Binary Proxy Execution: Mshta",
+      "tactics": ["Defense Evasion"],
+      "description": "Using mshta.exe to run script content, borrowing the trust of a signed Microsoft binary."
+    },
+    {
+      "id": "T1218.011",
+      "name": "System Binary Proxy Execution: Rundll32",
+      "tactics": ["Defense Evasion"],
+      "description": "Using rundll32.exe to execute code from a library, borrowing the trust of a signed Microsoft binary."
+    },
+    {
+      "id": "T1543.003",
+      "name": "Create or Modify System Process: Windows Service",
+      "tactics": ["Persistence", "Privilege Escalation"],
+      "description": "Installing or altering a Windows service so code runs with high privilege and survives a reboot."
+    },
+    {
+      "id": "T1547.001",
+      "name": "Boot or Logon Autostart Execution: Registry Run Keys / Startup Folder",
+      "tactics": ["Persistence", "Privilege Escalation"],
+      "description": "Adding an entry to a run key or startup folder so a program launches at logon."
+    },
+    {
+      "id": "T1552.001",
+      "name": "Unsecured Credentials: Credentials In Files",
+      "tactics": ["Credential Access"],
+      "description": "Finding credentials left in configuration files, scripts or documents on a host or share."
+    },
+    {
+      "id": "T1555",
+      "name": "Credentials from Password Stores",
+      "tactics": ["Credential Access"],
+      "description": "Reading credentials from stores such as browser password managers, credential vaults or keychains."
+    },
+    {
+      "id": "T1562.001",
+      "name": "Impair Defenses: Disable or Modify Tools",
+      "tactics": ["Defense Evasion"],
+      "description": "Stopping, reconfiguring or uninstalling security tooling so that activity is not detected or recorded."
+    },
+    {
+      "id": "T1566.001",
+      "name": "Phishing: Spearphishing Attachment",
+      "tactics": ["Initial Access"],
+      "description": "Delivering a malicious attachment to a targeted recipient so that opening it begins execution."
+    }
+  ]
+}

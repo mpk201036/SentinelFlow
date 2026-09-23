@@ -92,7 +92,7 @@ Full detail: [docs/architecture.md](docs/architecture.md).
 - Canonical event schema that tolerates partial data from different sources
 - IOC extraction (IPv4/IPv6, domains, URLs, MD5/SHA1/SHA256, emails, paths)
 - Transparent detection engine — rules are YAML data, not buried Python
-- MITRE ATT&CK mapping with a stated reason for every mapping
+- MITRE ATT&CK mapping with a stated reason for every mapping, from a local catalogue
 - Deterministic, explainable severity scoring
 - Alert correlation into *Potential Incidents* (never "confirmed compromise")
 - Analyst workflow: status, classification, notes, full audit trail
@@ -170,6 +170,8 @@ sentinelflow rules                      # list the 15 shipped rules
 sentinelflow rules --validate           # exits non-zero if any file is broken
 sentinelflow rules --by-technique       # ATT&CK coverage
 sentinelflow detect                     # evaluate stored events, show what fires
+sentinelflow mitre --coverage           # ATT&CK tactic coverage, gaps included
+sentinelflow mitre --technique T1059.001
 ```
 
 Additional commands (`serve`, `report`) arrive with their corresponding stages.
@@ -222,6 +224,7 @@ where the boundaries are.
 | [docs/integrations.md](docs/integrations.md) | Supported sources and their payload contracts |
 | [docs/ioc-extraction.md](docs/ioc-extraction.md) | Indicator extraction and its false-positive controls |
 | [docs/detection-engine.md](docs/detection-engine.md) | The rule language, the engine, and what ships |
+| [docs/mitre-attack.md](docs/mitre-attack.md) | How mappings are justified, and what is refused |
 | [docs/roadmap.md](docs/roadmap.md) | Build stages and current status |
 | [SECURITY.md](SECURITY.md) | Threat model and controls |
 
