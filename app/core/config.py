@@ -89,6 +89,15 @@ class Settings(BaseSettings):
     # ------------------------------------------------------------------
     api_host: str = "127.0.0.1"
     api_port: Annotated[int, Field(ge=1, le=65535)] = 8000
+    #: Requests per minute, per client address. A coarse guard against a
+    #: runaway importer, not a substitute for a gateway in front of a real
+    #: deployment: it is per-process and resets when the process does.
+    api_rate_limit_per_minute: Annotated[int, Field(ge=0, le=100_000)] = 600
+    #: Interactive OpenAPI docs at /docs. Useful locally; turn off if the API
+    #: is ever exposed, since it enumerates every endpoint.
+    api_docs_enabled: bool = True
+    #: Largest page any list endpoint will return.
+    api_max_page_size: Annotated[int, Field(ge=1, le=1_000)] = 200
 
     # ------------------------------------------------------------------
     # Logging
@@ -200,6 +209,16 @@ class Settings(BaseSettings):
     def is_production(self) -> bool:
         return self.environment is Environment.PRODUCTION
 
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def api_is_exposed(self) -> bool:
+        """True when the API would accept connections from another machine.
+
+        SentinelFlow has no authentication, so this is worth saying out loud at
+        startup rather than discovering later.
+        """
+        return self.api_host not in ("127.0.0.1", "localhost", "::1")
+
     # ------------------------------------------------------------------
     # Safe display
     # ------------------------------------------------------------------
@@ -217,6 +236,8 @@ class Settings(BaseSettings):
             "debug": self.debug,
             "database_url": self.database_url,
             "api": f"{self.api_host}:{self.api_port}",
+            "api_rate_limit_per_minute": self.api_rate_limit_per_minute,
+            "api_docs_enabled": self.api_docs_enabled,
             "log_level": self.log_level,
             "log_format": self.log_format.value,
             "log_file": str(self.log_file) if self.log_file else None,

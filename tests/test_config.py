@@ -142,6 +142,8 @@ class TestSummary:
             "debug",
             "database_url",
             "api",
+            "api_rate_limit_per_minute",
+            "api_docs_enabled",
             "log_level",
             "log_format",
             "log_file",
