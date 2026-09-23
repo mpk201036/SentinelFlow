@@ -180,6 +180,9 @@ Triage:
 sentinelflow triage                     # score stored events and create alerts
 sentinelflow alerts --open              # the queue
 sentinelflow alert 20ea                 # one alert in full, by id prefix
+sentinelflow correlate                  # group related alerts
+sentinelflow incidents                  # investigations
+sentinelflow incident ade0              # one investigation, with its timeline
 ```
 
 Additional commands (`serve`, `report`) arrive with their corresponding stages.
@@ -234,6 +237,7 @@ where the boundaries are.
 | [docs/detection-engine.md](docs/detection-engine.md) | The rule language, the engine, and what ships |
 | [docs/mitre-attack.md](docs/mitre-attack.md) | How mappings are justified, and what is refused |
 | [docs/severity.md](docs/severity.md) | The scoring factors and why the AI cannot reach them |
+| [docs/correlation.md](docs/correlation.md) | What links alerts, what deliberately does not |
 | [docs/roadmap.md](docs/roadmap.md) | Build stages and current status |
 | [SECURITY.md](SECURITY.md) | Threat model and controls |
 

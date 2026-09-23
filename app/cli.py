@@ -31,9 +31,9 @@ from app.enrichment import EnrichmentService
 from app.ingestion import IngestionService, generate_dataset, group_by_adapter, list_adapters
 from app.ingestion.service import IngestionOutcome
 from app.mitre import MitreMapper, load_catalogue, tactic_coverage, validate_rule_techniques
-from app.models.enums import AlertStatus, IndicatorType, Severity
+from app.models.enums import AlertStatus, IncidentStatus, IndicatorType, Severity
 from app.models.ingestion import IngestionReport
-from app.services import TriagePipeline
+from app.services import CorrelationService, TriagePipeline
 
 app = typer.Typer(
     name="sentinelflow",
@@ -394,6 +394,7 @@ def demo(
             ingested.extend(outcome.events)
 
         triage = TriagePipeline(session, settings).process(ingested)
+        correlation = CorrelationService(session, settings).correlate_pending()
 
     table = Table(title="Demo ingestion", header_style="bold", title_style="bold")
     table.add_column("Source", style="cyan")
@@ -406,7 +407,15 @@ def demo(
     console.print(f"[green]{triage.summary()}[/green]")
     if triage.alerts:
         console.print(f"[bold]Severity:[/bold] {triage.severity_counts()}")
-        console.print("[dim]Review them with: sentinelflow alerts[/dim]")
+    if correlation.incident_count:
+        console.print(f"[green]{correlation.summary()}[/green]")
+        for incident in correlation.created:
+            console.print(
+                f"  [bold]{incident.display_label}:[/bold] {incident.title} "
+                f"[dim]({incident.alert_count} alerts)[/dim]"
+            )
+    if triage.alerts:
+        console.print("[dim]Review them with: sentinelflow alerts / sentinelflow incidents[/dim]")
 
 
 @app.command()
@@ -1029,3 +1038,151 @@ def show_alert(
             console.print(f"  [dim]{analysis.provider}/{analysis.model}[/dim]")
             console.print(f"  {analysis.summary[:300]}")
     console.print()
+
+
+# ---------------------------------------------------------------------------
+# Correlation and incidents
+# ---------------------------------------------------------------------------
+@app.command()
+def correlate(
+    limit: int = typer.Option(1000, "--limit", "-l", help="Maximum alerts to consider."),
+) -> None:
+    """Group related alerts into potential incidents."""
+    configure_logging()
+    settings = get_settings()
+
+    with session_scope(settings) as session:
+        result = CorrelationService(session, settings).correlate_pending(limit=limit)
+
+    if not result.alerts_considered:
+        console.print("[green]Every alert has already been correlated.[/green]")
+        return
+
+    console.print(f"[bold]{result.summary()}[/bold]")
+    for incident in result.created + result.extended:
+        console.print(f"\n  [bold]{incident.display_label}[/bold]  {incident.title}")
+        console.print(
+            f"  {_severity_text(incident.severity)}  {incident.alert_count} alerts  "
+            f"[dim]key={incident.correlation_key}[/dim]"
+        )
+        for reason in incident.correlation_reasons:
+            console.print(f"      [dim]- {reason[:110]}[/dim]")
+    console.print(
+        "\n[dim]These are potential incidents awaiting review. SentinelFlow does not "
+        "declare a compromise; only an analyst confirms one.[/dim]"
+    )
+
+
+@app.command()
+def incidents(
+    status: str | None = typer.Option(
+        None, "--status", "-s", help="potential, investigating, confirmed, dismissed."
+    ),
+    limit: int = typer.Option(25, "--limit", "-l", help="How many to show."),
+) -> None:
+    """List correlated investigations."""
+    from app.database import repository
+
+    settings = get_settings()
+    try:
+        wanted = IncidentStatus(status) if status else None
+    except ValueError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(code=1) from exc
+
+    with session_scope(settings) as session:
+        found = repository.list_incidents(session, limit=limit)
+        total = repository.count_incidents(session)
+    if wanted is not None:
+        found = [incident for incident in found if incident.status is wanted]
+
+    if not found:
+        console.print("[yellow]No incidents.[/yellow] Run: sentinelflow correlate")
+        return
+
+    table = Table(title="Investigations", header_style="bold", title_style="bold")
+    table.add_column("ID", style="dim", no_wrap=True)
+    table.add_column("Severity", no_wrap=True)
+    table.add_column("State", no_wrap=True)
+    table.add_column("Alerts", justify="right")
+    table.add_column("Title")
+    for incident in found:
+        table.add_row(
+            str(incident.incident_id)[:8],
+            _severity_text(incident.severity),
+            incident.display_label,
+            str(incident.alert_count),
+            incident.title[:60],
+        )
+    console.print(table)
+    console.print(f"[dim]{total} incident(s) total[/dim]")
+
+
+@app.command("incident")
+def show_incident(
+    incident_id: str = typer.Argument(..., help="Incident id, or a unique prefix of one."),
+) -> None:
+    """Show one investigation: its timeline, why it was grouped, and its alerts."""
+    from app.database import repository
+
+    settings = get_settings()
+    prefix = incident_id.strip().lower().replace("-", "")
+
+    with session_scope(settings) as session:
+        candidates = [
+            incident
+            for incident in repository.list_incidents(session, limit=500)
+            if str(incident.incident_id).replace("-", "").startswith(prefix)
+        ]
+        if len(candidates) != 1:
+            message = (
+                f"No incident starts with {incident_id!r}."
+                if not candidates
+                else f"{len(candidates)} incidents start with {incident_id!r}."
+            )
+            console.print(f"[red]{message}[/red]")
+            raise typer.Exit(code=1)
+
+        incident = candidates[0]
+        members = repository.list_alerts(session, incident_id=incident.incident_id, limit=200)
+        timeline = []
+        for alert in members:
+            event = repository.get_event(session, alert.primary_event_id)
+            if event is not None:
+                timeline.append((event, alert))
+
+    console.print(f"\n[bold]{incident.title}[/bold]")
+    console.print(f"[dim]{incident.incident_id}[/dim]\n")
+
+    header = Table(show_header=False, box=None, pad_edge=False)
+    header.add_column(style="cyan", no_wrap=True)
+    header.add_column()
+    header.add_row("State", f"[bold]{incident.display_label}[/bold]")
+    header.add_row("Severity", f"{_severity_text(incident.severity)}  [dim](highest member)[/dim]")
+    header.add_row("Alerts", str(incident.alert_count))
+    header.add_row("Hosts", ", ".join(incident.hostnames) or "-")
+    header.add_row("Accounts", ", ".join(incident.usernames) or "-")
+    if incident.first_event_at and incident.last_event_at:
+        header.add_row(
+            "Window",
+            f"{incident.first_event_at:%Y-%m-%d %H:%M} to {incident.last_event_at:%H:%M} UTC",
+        )
+    header.add_row("Correlation key", incident.correlation_key)
+    console.print(header)
+
+    console.print("\n[bold]Why these alerts are grouped[/bold]")
+    for reason in incident.correlation_reasons:
+        console.print(f"  [dim]-[/dim] {reason}")
+
+    console.print("\n[bold]Timeline[/bold]")
+    for event, alert in sorted(timeline, key=lambda pair: pair[0].timestamp):
+        console.print(
+            f"  [dim]{event.timestamp:%H:%M:%S}[/dim]  {_severity_text(alert.severity_level)}  "
+            f"[cyan]{', '.join(sorted(set(alert.rule_ids))) or '-'}[/cyan]  {event.describe()[:70]}"
+        )
+
+    techniques = sorted({t for alert in members for t in alert.technique_ids})
+    if techniques:
+        console.print(f"\n[bold]ATT&CK[/bold]  {', '.join(techniques)}")
+
+    console.print(f"\n[dim]{incident.summary}[/dim]\n")

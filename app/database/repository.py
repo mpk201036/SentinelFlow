@@ -40,7 +40,7 @@ from app.database.tables import (
 from app.models.ai import AIAnalysis
 from app.models.alert import Alert
 from app.models.analyst import AnalystNote, AuditEntry
-from app.models.enums import AlertStatus, IndicatorType, Severity
+from app.models.enums import AlertStatus, IncidentStatus, IndicatorType, Severity
 from app.models.event import SecurityEvent
 from app.models.incident import Incident
 from app.models.indicator import Indicator
@@ -406,6 +406,117 @@ def save_incident(session: Session, incident: Incident) -> IncidentRow:
         for alert_row in alerts:
             alert_row.incident_id = row.incident_id
         session.flush()
+    return row
+
+
+def upsert_incident(session: Session, incident: Incident) -> IncidentRow:
+    """Create an incident, or refresh an existing one in place.
+
+    Refreshing rather than replacing matters: an analyst may already have moved
+    the incident to investigating or written notes against it, and correlation
+    finding another related alert must not undo that. Status and classification
+    are therefore never touched here.
+    """
+    existing = session.get(IncidentRow, incident.incident_id)
+    if existing is None:
+        return save_incident(session, incident)
+
+    existing.updated_at = incident.updated_at
+    existing.title = incident.title
+    existing.severity = incident.severity
+    existing.correlation_key = incident.correlation_key
+    existing.correlation_reasons = list(incident.correlation_reasons)
+    existing.first_event_at = incident.first_event_at
+    existing.last_event_at = incident.last_event_at
+    existing.hostnames = list(incident.hostnames)
+    existing.usernames = list(incident.usernames)
+    existing.summary = incident.summary
+    session.flush()
+
+    if incident.alert_ids:
+        attach_alerts_to_incident(session, incident.incident_id, incident.alert_ids)
+    return existing
+
+
+def attach_alerts_to_incident(
+    session: Session, incident_id: UUID, alert_ids: Iterable[UUID]
+) -> int:
+    """Attach alerts to an incident, never moving one that already belongs elsewhere.
+
+    Reassigning an alert would silently rewrite an investigation somebody may
+    already be working on.
+    """
+    ids = list(alert_ids)
+    if not ids:
+        return 0
+    rows = session.scalars(
+        select(AlertRow).where(
+            AlertRow.alert_id.in_(ids),
+            (AlertRow.incident_id.is_(None)) | (AlertRow.incident_id == incident_id),
+        )
+    ).all()
+    for row in rows:
+        row.incident_id = incident_id
+    session.flush()
+    return len(rows)
+
+
+def alerts_without_incident(
+    session: Session, *, limit: int = 1_000
+) -> list[tuple[Alert, SecurityEvent]]:
+    """Alerts correlation has not considered yet, with the event behind each.
+
+    Returned with their events because correlation reasons entirely in event
+    time. An alert created today from a week-old export describes activity from
+    a week ago, and grouping it by when the row was written would put it beside
+    whatever else happened to be imported this afternoon.
+    """
+    rows = session.execute(
+        select(AlertRow, EventRow)
+        .join(EventRow, EventRow.event_id == AlertRow.primary_event_id)
+        .options(*_ALERT_LOADERS)
+        .where(AlertRow.incident_id.is_(None))
+        .order_by(EventRow.timestamp.asc())
+        .limit(limit)
+    ).all()
+    return [(mappers.row_to_alert(alert), mappers.row_to_event(event)) for alert, event in rows]
+
+
+def alerts_with_events_since(
+    session: Session, since: datetime, *, limit: int = 2_000
+) -> list[tuple[Alert, SecurityEvent]]:
+    """Alerts whose underlying event happened at or after ``since``.
+
+    Joined on the event rather than the alert's creation time: importing a
+    week-old export late must not make its alerts look simultaneous.
+    """
+    rows = session.execute(
+        select(AlertRow, EventRow)
+        .join(EventRow, EventRow.event_id == AlertRow.primary_event_id)
+        .options(*_ALERT_LOADERS)
+        .where(EventRow.timestamp >= since)
+        .order_by(EventRow.timestamp.asc())
+        .limit(limit)
+    ).all()
+    return [(mappers.row_to_alert(alert), mappers.row_to_event(event)) for alert, event in rows]
+
+
+def count_incidents(session: Session, *, status: IncidentStatus | None = None) -> int:
+    query = select(func.count()).select_from(IncidentRow)
+    if status is not None:
+        query = query.where(IncidentRow.status == status)
+    return int(session.scalar(query) or 0)
+
+
+def update_incident_status(
+    session: Session, incident_id: UUID, status: IncidentStatus
+) -> IncidentRow | None:
+    row = session.get(IncidentRow, incident_id)
+    if row is None:
+        return None
+    row.status = status
+    row.updated_at = _now()
+    session.flush()
     return row
 
 

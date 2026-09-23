@@ -8,6 +8,14 @@ pipeline    the order the stages run in
 
 from app.services.alerting import AlertBuildResult, AlertFactory, build_title, worst_severity
 from app.services.context import BusinessHours, EnvironmentContext, get_context, load_context
+from app.services.correlation import (
+    CorrelationEngine,
+    CorrelationGroup,
+    CorrelationResult,
+    CorrelationService,
+    Signal,
+    signals_for,
+)
 from app.services.pipeline import REPEAT_WINDOW_HOURS, TriagePipeline, TriageResult
 from app.services.severity import (
     FACTOR_NAMES,
@@ -22,14 +30,20 @@ __all__ = [
     "AlertBuildResult",
     "AlertFactory",
     "BusinessHours",
+    "CorrelationEngine",
+    "CorrelationGroup",
+    "CorrelationResult",
+    "CorrelationService",
     "EnvironmentContext",
     "SeverityEngine",
     "SeverityWeights",
+    "Signal",
     "TriagePipeline",
     "TriageResult",
     "build_title",
     "describe_scale",
     "get_context",
     "load_context",
+    "signals_for",
     "worst_severity",
 ]

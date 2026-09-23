@@ -22,7 +22,7 @@ Legend: **Done** · *In progress* · Planned
 | 6 | Detection engine and YAML rule set (10+ rules) | **Done** |
 | 7 | MITRE ATT&CK catalogue and evidence-backed mapping | **Done** |
 | 8 | Deterministic severity engine | **Done** |
-| 9 | Alert correlation and potential-incident grouping | Planned |
+| 9 | Alert correlation and potential-incident grouping | **Done** |
 
 ## Milestone 3 — Interface
 
@@ -183,3 +183,22 @@ Legend: **Done** · *In progress* · Planned
 * CLI: `triage`, `alerts`, `alert <id prefix>` with the full severity breakdown
 * `docs/severity.md`
 * 55 new tests, including three that assert the AI cannot influence a score
+
+## Stage 9 - delivered
+
+* `app/services/correlation.py` - transitive linking via connected components,
+  so an intrusion chain stays one investigation instead of being cut into
+  fragments by single-key grouping
+* Five linking signals (host, account, address, process chain, indicator), with
+  two deliberate exclusions: "same rule" across unrelated hosts, and internal
+  addresses or process names as indicators
+* The window is anchored on event time, never on when the alert row was
+  written, so a week-old export does not correlate as though it arrived today
+* Correlation records breadth as stated facts rather than inventing a third
+  severity number
+* Analyst work is never overwritten: extending an incident leaves status and
+  classification alone, and an alert already in an incident is never moved
+* CLI: `correlate`, `incidents`, `incident <prefix>` with a full timeline;
+  `demo` now runs ingestion, triage and correlation end to end
+* `docs/correlation.md`
+* 32 new tests
