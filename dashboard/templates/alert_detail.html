@@ -203,9 +203,14 @@
       {% set analysis = analyses[0] %}
       <p class="advisory-stamp">AI suggestion · not authoritative</p>
       <p class="muted small">{{ ai_disclaimer }}</p>
-      <p class="mono muted small">{{ analysis.provider }} / {{ analysis.model }} · {{ analysis.generated_at|ts('%Y-%m-%d %H:%M') }} UTC</p>
+      <p class="mono muted small">{{ analysis.provider }} / {{ analysis.model }}{% if analysis.duration_ms is not none %} · {{ '%.1f'|format(analysis.duration_ms / 1000) }} s{% endif %}{% if analysis.prompt_version %} · prompt {{ analysis.prompt_version }}{% endif %} · {{ analysis.generated_at|ts('%Y-%m-%d %H:%M') }} UTC</p>
       {% if analysis.injection_suspected %}
-      <p class="warning-note" role="note"><strong>Possible prompt injection.</strong> The evidence contained text that looked like instructions to the model. Treat this analysis with extra suspicion.</p>
+      <div class="warning-note" role="note">
+        <p><strong>Possible prompt injection.</strong> The evidence contains text aimed at a model. Treat this analysis with extra suspicion.</p>
+        {% if analysis.injection_signals %}
+        <ul class="signal-list">{% for signal in analysis.injection_signals %}<li class="mono small">{{ signal }}</li>{% endfor %}</ul>
+        {% endif %}
+      </div>
       {% endif %}
       <p>{{ analysis.summary }}</p>
       {% if analysis.suggested_severity %}
@@ -217,15 +222,29 @@
       {% endif %}
       {% for kind, items in [('Observed', analysis.observed), ('Inferred', analysis.inferred), ('Unknown', analysis.unknown)] if items %}
       <p class="label">{{ kind }}</p>
-      <ul class="statements statements--{{ kind|lower }}">{% for s in items %}<li>{{ s.text }}</li>{% endfor %}</ul>
+      <ul class="statements statements--{{ kind|lower }}">{% for s in items %}<li>{{ s.text }}{% if s.downgraded %} <span class="relabel" data-tip="Relabelled by SentinelFlow" data-tip-note="The model called this observed, but it cites something the evidence does not contain.">relabelled from observed</span>{% endif %}</li>{% endfor %}</ul>
       {% endfor %}
-      {% if analysis.analyst_questions %}
-      <p class="label">Questions for the analyst</p>
-      <ul class="statements">{% for q in analysis.analyst_questions %}<li>{{ q }}</li>{% endfor %}</ul>
+      {% for heading, items in [('Suspicious', analysis.suspicious_observations), ('Other explanations', analysis.possible_explanations), ('Questions for the analyst', analysis.analyst_questions), ('Suggested next steps', analysis.recommended_next_steps)] if items %}
+      <p class="label">{{ heading }}</p>
+      <ul class="statements">{% for item in items %}<li>{{ item }}</li>{% endfor %}</ul>
+      {% endfor %}
+      {% if analysis.grounding_notes or analysis.truncated %}
+      <div class="system-checks" role="note">
+        <p class="label">SentinelFlow checks <span class="muted">· written by SentinelFlow, not the model</span></p>
+        <ul class="statements">
+          {% for note in analysis.grounding_notes %}<li>{{ note }}</li>{% endfor %}
+          {% if analysis.truncated %}<li>The model's reply exceeded the size limits and was shortened.</li>{% endif %}
+        </ul>
+      </div>
+      {% endif %}
+      {% if analyses|length > 1 %}
+      <p class="muted small">{{ analyses|length - 1 }} earlier {{ 'analysis' if analyses|length == 2 else 'analyses' }} stored for this alert.</p>
       {% endif %}
       {% else %}
       <p class="quiet-state">
-        {% if ai_enabled %}No analysis has been requested for this alert.{% else %}AI is off. Everything above is complete without it — the model is an optional assistant, not a dependency.{% endif %}
+        {% if ai_enabled and not ai_problem %}No analysis has been requested for this alert. Ask the local model with <code class="mono">sentinelflow ai analyze {{ alert.alert_id|string|truncate(8, True, '') }}</code>.
+        {% elif ai_enabled %}AI is enabled but not in use: {{ ai_problem }}
+        {% else %}AI is off. Everything above is complete without it — the model is an optional assistant, not a dependency.{% endif %}
       </p>
       {% endif %}
     </div>

@@ -70,6 +70,8 @@ classDiagram
         +Severity suggested_severity
         +is_advisory = True
         +bool injection_suspected
+        +str[] injection_signals
+        +str[] grounding_notes
         FROZEN - ADVISORY ONLY
     }
     class AnalystNote {
@@ -149,6 +151,13 @@ convention that developers must remember. It is enforced by the types:
 
 `tests/test_ai_boundary.py` asserts each of these directly, so the guarantee
 survives future refactoring.
+
+Two voices live in an `AIAnalysis`, and they are kept apart. The model writes
+the summary, the labelled statements and the lists. SentinelFlow writes
+`injection_signals`, `grounding_notes` and each statement's `downgraded` flag
+after the model has answered (schema version 5 gives them their own columns).
+The model's text is never edited to carry SentinelFlow's findings, so an
+analyst can always tell who said what. See [ai-safety.md](ai-safety.md).
 
 ## Handling untrusted values
 

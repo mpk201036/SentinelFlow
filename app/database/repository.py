@@ -13,6 +13,7 @@ ingests — structurally unable to alter a query.
 
 from __future__ import annotations
 
+import re
 from collections.abc import Iterable, Sequence
 from datetime import datetime
 from typing import Any, cast
@@ -339,6 +340,30 @@ def get_alert(session: Session, alert_id: UUID) -> Alert | None:
     return mappers.row_to_alert(row) if row else None
 
 
+_HEX_PREFIX_RE = re.compile(r"^[0-9a-f]{1,32}$")
+
+
+def _id_prefix_clause(column: Any, prefix: str) -> Any:
+    """A LIKE clause for an id prefix, or None if the prefix is not plain hex.
+
+    Ids are stored as 32 hex characters with no dashes. Restricting the prefix
+    to hex characters also means ``%`` and ``_`` can never reach the LIKE
+    pattern as wildcards.
+    """
+    key = prefix.strip().lower().replace("-", "")
+    if not _HEX_PREFIX_RE.match(key):
+        return None
+    return sa.cast(column, sa.String).like(f"{key}%")
+
+
+def find_alert_ids_by_prefix(session: Session, prefix: str, *, limit: int = 2) -> list[UUID]:
+    """Alert ids starting with ``prefix``. Ask for 2 to tell unique from ambiguous."""
+    clause = _id_prefix_clause(AlertRow.alert_id, prefix)
+    if clause is None:
+        return []
+    return list(session.scalars(select(AlertRow.alert_id).where(clause).limit(limit)))
+
+
 def _alert_filters(
     query: sa.Select[Any],
     *,
@@ -613,6 +638,13 @@ def get_incident(session: Session, incident_id: UUID) -> Incident | None:
         .options(selectinload(IncidentRow.alerts))
     )
     return mappers.row_to_incident(row) if row else None
+
+
+def find_incident_ids_by_prefix(session: Session, prefix: str, *, limit: int = 2) -> list[UUID]:
+    clause = _id_prefix_clause(IncidentRow.incident_id, prefix)
+    if clause is None:
+        return []
+    return list(session.scalars(select(IncidentRow.incident_id).where(clause).limit(limit)))
 
 
 def list_incidents(session: Session, *, limit: int = 50, offset: int = 0) -> list[Incident]:

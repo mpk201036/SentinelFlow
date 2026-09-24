@@ -72,6 +72,27 @@ def _add_event_triage_marker(connection: Connection) -> None:
     )
 
 
+def _add_ai_system_checks(connection: Connection) -> None:
+    """Version 5: store SentinelFlow's own checks on AI output.
+
+    The injection signals, grounding notes and per-statement downgrade flag
+    are written by SentinelFlow, not by the model, so they get their own
+    columns instead of being folded into the model's text.
+    """
+    additions = {
+        "ai_analysis": (
+            ("injection_signals", "JSON NOT NULL DEFAULT '[]'"),
+            ("grounding_notes", "JSON NOT NULL DEFAULT '[]'"),
+        ),
+        "ai_statements": (("downgraded", "BOOLEAN NOT NULL DEFAULT 0"),),
+    }
+    for table, columns in additions.items():
+        existing = {row[1] for row in connection.execute(sa.text(f"PRAGMA table_info({table})"))}
+        for name, definition in columns:
+            if name not in existing:
+                connection.execute(sa.text(f"ALTER TABLE {table} ADD COLUMN {name} {definition}"))
+
+
 #: Ordered migrations applied on top of the baseline.
 MIGRATIONS: tuple[Migration, ...] = (
     Migration(
@@ -88,6 +109,11 @@ MIGRATIONS: tuple[Migration, ...] = (
         version=4,
         description="add events.triaged_at",
         upgrade=_add_event_triage_marker,
+    ),
+    Migration(
+        version=5,
+        description="add AI injection signals, grounding notes and statement downgrades",
+        upgrade=_add_ai_system_checks,
     ),
 )
 

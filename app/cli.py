@@ -19,6 +19,7 @@ from typing import Any
 
 import typer
 from rich.console import Console
+from rich.markup import escape
 from rich.table import Table
 
 from app import __version__
@@ -31,7 +32,7 @@ from app.enrichment import EnrichmentService
 from app.ingestion import IngestionService, generate_dataset, group_by_adapter, list_adapters
 from app.ingestion.service import IngestionOutcome
 from app.mitre import MitreMapper, load_catalogue, tactic_coverage, validate_rule_techniques
-from app.models.enums import AlertStatus, IncidentStatus, IndicatorType, Severity
+from app.models.enums import Actor, AlertStatus, IncidentStatus, IndicatorType, Severity
 from app.models.ingestion import IngestionReport
 from app.services import CorrelationService, TriagePipeline
 
@@ -45,6 +46,19 @@ console = Console()
 logger = get_logger(__name__)
 
 _OK = "[green]OK[/green]"
+
+
+def _u(value: object) -> str:
+    """Escape untrusted text for Rich.
+
+    Rich reads ``[...]`` as markup, so an event carrying ``[/]`` in its command
+    line would crash the command that prints it, and ``[link=...]`` or
+    ``[bold red]`` would let event data restyle the analyst's terminal. Every
+    value that came from an event, a file or a model goes through here.
+    """
+    return escape(str(value))
+
+
 _WARN = "[yellow]WARN[/yellow]"
 _FAIL = "[red]FAIL[/red]"
 
@@ -273,10 +287,6 @@ def _check_ollama(base_url: str) -> tuple[str, str, str]:
         )
 
 
-if __name__ == "__main__":  # pragma: no cover
-    app()
-
-
 # ---------------------------------------------------------------------------
 # Ingestion
 # ---------------------------------------------------------------------------
@@ -284,7 +294,7 @@ def _print_report(report: IngestionReport) -> None:
     """Render an import result, rejections included."""
     if report.duplicate_batch:
         console.print(
-            f"[yellow]Skipped[/yellow] {report.origin}: identical content already imported."
+            f"[yellow]Skipped[/yellow] {_u(report.origin)}: identical content already imported."
         )
         console.print("[dim]Pass --force to import it again.[/dim]")
         return
@@ -303,7 +313,7 @@ def _print_report(report: IngestionReport) -> None:
     table.add_column("Reason", style="yellow", no_wrap=True)
     table.add_column("Detail")
     for rejection in report.rejections[:15]:
-        table.add_row(str(rejection.index), rejection.reason.value, rejection.detail[:90])
+        table.add_row(str(rejection.index), rejection.reason.value, _u(rejection.detail[:90]))
     console.print(table)
     if len(report.rejections) > 15:
         console.print(
@@ -332,7 +342,7 @@ def import_events(
                 path, adapter_name=source, force=force, persist=not dry_run
             )
     except (FileNotFoundError, ValueError) as exc:
-        console.print(f"[red]{type(exc).__name__}:[/red] {exc}")
+        console.print(f"[red]{type(exc).__name__}:[/red] {_u(exc)}")
         raise typer.Exit(code=1) from exc
 
     if dry_run:
@@ -454,10 +464,10 @@ def rejections(
     for record in records:
         table.add_row(
             record.rejected_at.strftime("%Y-%m-%d %H:%M"),
-            record.origin or "-",
+            _u(record.origin or "-"),
             str(record.index),
             record.reason.value,
-            record.detail[:70],
+            _u(record.detail[:70]),
         )
     console.print(table)
 
@@ -518,7 +528,7 @@ def indicators(
             context += " (documentation range)"
         table.add_row(
             indicator.indicator_type.value,
-            indicator.value[:70],
+            _u(indicator.value[:70]),
             str(indicator.occurrences),
             indicator.first_seen.strftime("%Y-%m-%d %H:%M"),
             context,
@@ -574,14 +584,14 @@ def rules(
         table.add_column("File", style="cyan", no_wrap=True)
         table.add_column("Problem")
         for error in rule_set.errors:
-            table.add_row(error.path, error.message)
+            table.add_row(_u(error.path), _u(error.message))
         console.print(table)
 
     if validate_only:
         catalogue = load_catalogue()
         unmapped = validate_rule_techniques(rule_set.rules, catalogue)
         for problem in unmapped:
-            console.print(f"[yellow]ATT&CK:[/yellow] {problem}")
+            console.print(f"[yellow]ATT&CK:[/yellow] {_u(problem)}")
         if rule_set.errors:
             console.print(f"[red]{len(rule_set.errors)} rule(s) failed to load.[/red]")
             raise typer.Exit(code=1)
@@ -683,8 +693,8 @@ def detect(
         table.add_row(
             f"[{colour}]{result.rule_severity.value}[/{colour}]",
             result.rule_id,
-            (event.hostname if event and event.hostname else "-"),
-            evidence[:100],
+            _u(event.hostname if event and event.hostname else "-"),
+            _u(evidence[:100]),
         )
     console.print(table)
     if len(ordered) > 40:
@@ -737,7 +747,7 @@ def mitre(
 
     if catalogue.errors:
         for problem in catalogue.errors:
-            console.print(f"[yellow]Catalogue:[/yellow] {problem}")
+            console.print(f"[yellow]Catalogue:[/yellow] {_u(problem)}")
         if not catalogue.techniques:
             raise typer.Exit(code=1)
 
@@ -812,6 +822,24 @@ _STATUS_COLOURS = {
 }
 
 
+def _prefix_problem(kind: str, prefix: str, matches: int) -> str:
+    if matches > 1:
+        return f"More than one {kind} starts with {prefix!r}. Give more characters."
+    return f"No {kind} starts with {prefix!r}."
+
+
+def _resolve_alert(session: Any, prefix: str) -> Any:
+    """The one alert whose id starts with ``prefix``, or exit with a message."""
+    from app.database import repository
+
+    matches = repository.find_alert_ids_by_prefix(session, prefix)
+    alert = repository.get_alert(session, matches[0]) if len(matches) == 1 else None
+    if alert is None:
+        console.print(f"[red]{_prefix_problem('alert', prefix, len(matches))}[/red]")
+        raise typer.Exit(code=1)
+    return alert
+
+
 def _severity_text(level: Severity, score: int | None = None) -> str:
     colour = _SEVERITY_COLOURS.get(level.value, "white")
     suffix = f" {score}" if score is not None else ""
@@ -853,7 +881,7 @@ def triage(
         table.add_row(
             _severity_text(alert.severity_level),
             str(alert.severity.score),
-            alert.title[:70],
+            _u(alert.title[:70]),
             ", ".join(sorted(set(alert.rule_ids)))[:28],
         )
     console.print(table)
@@ -911,7 +939,7 @@ def alerts(
             _severity_text(alert.severity_level, alert.severity.score),
             f"[{status_colour}]{alert.status.value}[/{status_colour}]",
             alert.created_at.strftime("%Y-%m-%d %H:%M"),
-            alert.title[:62],
+            _u(alert.title[:62]),
         )
     console.print(table)
     console.print(f"[dim]{total} alerts total - {breakdown}[/dim]")
@@ -925,27 +953,14 @@ def show_alert(
     from app.database import repository
 
     settings = get_settings()
-    prefix = alert_id.strip().lower().replace("-", "")
 
     with session_scope(settings) as session:
-        candidates = [
-            alert
-            for alert in repository.list_alerts(session, limit=500)
-            if str(alert.alert_id).replace("-", "").startswith(prefix)
-        ]
-        if len(candidates) != 1:
-            if not candidates:
-                console.print(f"[red]No alert starts with {alert_id!r}.[/red]")
-            else:
-                console.print(f"[red]{len(candidates)} alerts start with {alert_id!r}.[/red]")
-            raise typer.Exit(code=1)
-
-        alert = candidates[0]
+        alert = _resolve_alert(session, alert_id)
         event = repository.get_event(session, alert.primary_event_id)
         notes = repository.list_notes(session, alert_id=alert.alert_id)
         analyses = repository.get_ai_analyses(session, alert.alert_id)
 
-    console.print(f"\n[bold]{alert.title}[/bold]")
+    console.print(f"\n[bold]{_u(alert.title)}[/bold]")
     console.print(f"[dim]{alert.alert_id}[/dim]\n")
 
     header = Table(show_header=False, box=None, pad_edge=False)
@@ -982,7 +997,7 @@ def show_alert(
             ("Message", event.event_message),
         ):
             if value:
-                evidence.add_row(label, str(value)[:110])
+                evidence.add_row(label, _u(str(value)[:110]))
         console.print(evidence)
 
     # --- Why it fired ---------------------------------------------------
@@ -993,14 +1008,14 @@ def show_alert(
             f"{detection.rule_name}"
         )
         for match in detection.matched:
-            console.print(f"      [dim]{match}[/dim]")
+            console.print(f"      [dim]{_u(match)}[/dim]")
         if detection.recommendation:
             console.print(f"      [green]Next:[/green] {detection.recommendation.strip()[:150]}")
 
     # --- Severity breakdown ---------------------------------------------
     console.print("\n[bold]How the severity was calculated[/bold] [dim](deterministic)[/dim]")
     for factor in alert.severity.factors:
-        console.print(f"  {factor.points:+4d}  [cyan]{factor.name}[/cyan]  {factor.detail}")
+        console.print(f"  {factor.points:+4d}  [cyan]{factor.name}[/cyan]  {_u(factor.detail)}")
     console.print(
         f"  [bold]{alert.severity.score:4d}[/bold]  total -> {alert.severity_level.value}"
     )
@@ -1013,7 +1028,7 @@ def show_alert(
                 f"  [cyan]{mapping.technique_id}[/cyan] {mapping.technique.name} "
                 f"[dim]({', '.join(mapping.technique.tactics)})[/dim]"
             )
-            console.print(f"      [dim]{mapping.reason[:150]}[/dim]")
+            console.print(f"      [dim]{_u(mapping.reason[:150])}[/dim]")
 
     # --- Indicators -------------------------------------------------------
     if alert.indicators:
@@ -1021,7 +1036,7 @@ def show_alert(
         for indicator in alert.indicators[:15]:
             marker = " [dim](internal)[/dim]" if indicator.is_internal else ""
             console.print(
-                f"  [cyan]{indicator.indicator_type.value:13}[/cyan] {indicator.value[:80]}{marker}"
+                f"  [cyan]{indicator.indicator_type.value:13}[/cyan] {_u(indicator.value[:80])}{marker}"
             )
 
     # --- Analyst ----------------------------------------------------------
@@ -1029,15 +1044,75 @@ def show_alert(
         console.print("\n[bold]Analyst notes[/bold]")
         for note in notes:
             console.print(
-                f"  [dim]{note.created_at:%Y-%m-%d %H:%M}[/dim] {note.author}: {note.body[:120]}"
+                f"  [dim]{note.created_at:%Y-%m-%d %H:%M}[/dim] {_u(note.author)}: "
+                f"{_u(note.body[:120])}"
             )
 
     if analyses:
-        console.print("\n[bold yellow]AI SUGGESTION - NOT AUTHORITATIVE[/bold yellow]")
-        for analysis in analyses[:1]:
-            console.print(f"  [dim]{analysis.provider}/{analysis.model}[/dim]")
-            console.print(f"  {analysis.summary[:300]}")
+        _print_analysis(alert, analyses[0])
+        if len(analyses) > 1:
+            console.print(f"  [dim]{len(analyses) - 1} earlier analysis/analyses stored.[/dim]")
     console.print()
+
+
+def _print_analysis(alert: Any, analysis: Any) -> None:
+    """Render an advisory analysis, keeping the model's words and SentinelFlow's apart."""
+    from app.models.ai import AIAnalysis
+
+    console.print("\n[bold yellow]AI SUGGESTION - NOT AUTHORITATIVE[/bold yellow]")
+    seconds = f"{analysis.duration_ms / 1000:.1f} s" if analysis.duration_ms is not None else "-"
+    console.print(
+        f"  [dim]{_u(analysis.provider)} / {_u(analysis.model)} - {seconds} - prompt "
+        f"{_u(analysis.prompt_version or '-')} - {analysis.generated_at:%Y-%m-%d %H:%M} UTC[/dim]"
+    )
+    console.print(f"  [dim]{_u(AIAnalysis.DISCLAIMER)}[/dim]")
+
+    if analysis.injection_suspected:
+        console.print(
+            "\n  [bold red]Possible prompt injection.[/bold red] The evidence contains text "
+            "aimed at a model. Read this analysis with extra suspicion."
+        )
+        for signal in analysis.injection_signals:
+            console.print(f"    [red]-[/red] {_u(signal)}")
+
+    console.print(f"\n  {_u(analysis.summary)}")
+    if analysis.suggested_severity is not None:
+        rationale = analysis.suggested_severity_rationale or ""
+        console.print(
+            f"\n  [cyan]Deterministic[/cyan]  {_severity_text(alert.severity_level)} "
+            f"{alert.severity.score}/100  [dim](the verdict)[/dim]"
+        )
+        console.print(
+            f"  [cyan]AI suggests[/cyan]    {_u(analysis.suggested_severity.value)}  "
+            f"[dim]{_u(rationale[:200])}[/dim]"
+        )
+
+    labels = {"observed": "green", "inferred": "yellow", "unknown": "magenta"}
+    if analysis.statements:
+        console.print()
+    for statement in analysis.statements:
+        kind = statement.statement_type.value
+        colour = labels.get(kind, "white")
+        flag = " [dim](relabelled by SentinelFlow)[/dim]" if statement.downgraded else ""
+        console.print(f"  [{colour}]{kind.upper():8}[/{colour}] {_u(statement.text)}{flag}")
+
+    for heading, items in (
+        ("Suspicious", analysis.suspicious_observations),
+        ("Other explanations", analysis.possible_explanations),
+        ("Questions for you", analysis.analyst_questions),
+        ("Suggested next steps", analysis.recommended_next_steps),
+    ):
+        if items:
+            console.print(f"\n  [bold]{heading}[/bold]")
+            for item in items:
+                console.print(f"    - {_u(item)}")
+
+    if analysis.grounding_notes or analysis.truncated:
+        console.print("\n  [bold]SentinelFlow checks[/bold] [dim](not written by the model)[/dim]")
+        for note in analysis.grounding_notes:
+            console.print(f"    - {_u(note)}")
+        if analysis.truncated:
+            console.print("    - The model's reply was longer than the limits and was shortened.")
 
 
 # ---------------------------------------------------------------------------
@@ -1060,13 +1135,13 @@ def correlate(
 
     console.print(f"[bold]{result.summary()}[/bold]")
     for incident in result.created + result.extended:
-        console.print(f"\n  [bold]{incident.display_label}[/bold]  {incident.title}")
+        console.print(f"\n  [bold]{incident.display_label}[/bold]  {_u(incident.title)}")
         console.print(
             f"  {_severity_text(incident.severity)}  {incident.alert_count} alerts  "
-            f"[dim]key={incident.correlation_key}[/dim]"
+            f"[dim]key={_u(incident.correlation_key)}[/dim]"
         )
         for reason in incident.correlation_reasons:
-            console.print(f"      [dim]- {reason[:110]}[/dim]")
+            console.print(f"      [dim]- {_u(reason[:110])}[/dim]")
     console.print(
         "\n[dim]These are potential incidents awaiting review. SentinelFlow does not "
         "declare a compromise; only an analyst confirms one.[/dim]"
@@ -1112,7 +1187,7 @@ def incidents(
             _severity_text(incident.severity),
             incident.display_label,
             str(incident.alert_count),
-            incident.title[:60],
+            _u(incident.title[:60]),
         )
     console.print(table)
     console.print(f"[dim]{total} incident(s) total[/dim]")
@@ -1126,24 +1201,14 @@ def show_incident(
     from app.database import repository
 
     settings = get_settings()
-    prefix = incident_id.strip().lower().replace("-", "")
 
     with session_scope(settings) as session:
-        candidates = [
-            incident
-            for incident in repository.list_incidents(session, limit=500)
-            if str(incident.incident_id).replace("-", "").startswith(prefix)
-        ]
-        if len(candidates) != 1:
-            message = (
-                f"No incident starts with {incident_id!r}."
-                if not candidates
-                else f"{len(candidates)} incidents start with {incident_id!r}."
-            )
-            console.print(f"[red]{message}[/red]")
+        matches = repository.find_incident_ids_by_prefix(session, incident_id)
+        found = repository.get_incident(session, matches[0]) if len(matches) == 1 else None
+        if found is None:
+            console.print(f"[red]{_prefix_problem('incident', incident_id, len(matches))}[/red]")
             raise typer.Exit(code=1)
-
-        incident = candidates[0]
+        incident = found
         members = repository.list_alerts(session, incident_id=incident.incident_id, limit=200)
         timeline = []
         for alert in members:
@@ -1151,7 +1216,7 @@ def show_incident(
             if event is not None:
                 timeline.append((event, alert))
 
-    console.print(f"\n[bold]{incident.title}[/bold]")
+    console.print(f"\n[bold]{_u(incident.title)}[/bold]")
     console.print(f"[dim]{incident.incident_id}[/dim]\n")
 
     header = Table(show_header=False, box=None, pad_edge=False)
@@ -1160,32 +1225,33 @@ def show_incident(
     header.add_row("State", f"[bold]{incident.display_label}[/bold]")
     header.add_row("Severity", f"{_severity_text(incident.severity)}  [dim](highest member)[/dim]")
     header.add_row("Alerts", str(incident.alert_count))
-    header.add_row("Hosts", ", ".join(incident.hostnames) or "-")
-    header.add_row("Accounts", ", ".join(incident.usernames) or "-")
+    header.add_row("Hosts", _u(", ".join(incident.hostnames) or "-"))
+    header.add_row("Accounts", _u(", ".join(incident.usernames) or "-"))
     if incident.first_event_at and incident.last_event_at:
         header.add_row(
             "Window",
             f"{incident.first_event_at:%Y-%m-%d %H:%M} to {incident.last_event_at:%H:%M} UTC",
         )
-    header.add_row("Correlation key", incident.correlation_key)
+    header.add_row("Correlation key", _u(incident.correlation_key))
     console.print(header)
 
     console.print("\n[bold]Why these alerts are grouped[/bold]")
     for reason in incident.correlation_reasons:
-        console.print(f"  [dim]-[/dim] {reason}")
+        console.print(f"  [dim]-[/dim] {_u(reason)}")
 
     console.print("\n[bold]Timeline[/bold]")
     for event, alert in sorted(timeline, key=lambda pair: pair[0].timestamp):
         console.print(
             f"  [dim]{event.timestamp:%H:%M:%S}[/dim]  {_severity_text(alert.severity_level)}  "
-            f"[cyan]{', '.join(sorted(set(alert.rule_ids))) or '-'}[/cyan]  {event.describe()[:70]}"
+            f"[cyan]{', '.join(sorted(set(alert.rule_ids))) or '-'}[/cyan]  "
+            f"{_u(event.describe()[:70])}"
         )
 
     techniques = sorted({t for alert in members for t in alert.technique_ids})
     if techniques:
         console.print(f"\n[bold]ATT&CK[/bold]  {', '.join(techniques)}")
 
-    console.print(f"\n[dim]{incident.summary}[/dim]\n")
+    console.print(f"\n[dim]{_u(incident.summary)}[/dim]\n")
 
 
 @app.command()
@@ -1238,6 +1304,12 @@ def serve(
     )
     if settings.api_docs_enabled:
         console.print(f"[dim]  API docs: http://{bind_host}:{bind_port}/docs[/dim]")
+    ai_mode = (
+        f"{settings.ai_provider.value} / {settings.ollama_model} (advisory)"
+        if settings.ai_active
+        else "off"
+    )
+    console.print(f"[dim]  AI: {ai_mode}[/dim]")
 
     uvicorn.run(
         "app.api.app:create_app",
@@ -1247,3 +1319,110 @@ def serve(
         factory=True,
         log_level=settings.log_level.lower(),
     )
+
+
+# ---------------------------------------------------------------------------
+# Optional AI
+# ---------------------------------------------------------------------------
+ai_app = typer.Typer(
+    help="Optional local AI analysis. Advisory only; never changes an alert.",
+    no_args_is_help=True,
+)
+app.add_typer(ai_app, name="ai")
+
+
+@ai_app.command("status")
+def ai_status() -> None:
+    """Show whether a local model can be asked, and if not, why not."""
+    from app.ai import PROMPT_VERSION, ProviderConfigurationError, build_provider
+
+    settings = get_settings()
+    if not settings.ai_active:
+        console.print(
+            "AI is [bold]off[/bold]. SentinelFlow is complete without it.\n"
+            "[dim]To use a local model: SENTINELFLOW_AI_ENABLED=true "
+            "SENTINELFLOW_AI_PROVIDER=ollama SENTINELFLOW_OLLAMA_MODEL=<model>[/dim]"
+        )
+        return
+    try:
+        provider = build_provider(settings)
+    except ProviderConfigurationError as exc:
+        console.print(f"[red]AI is enabled but will not be used:[/red] {_u(exc)}")
+        raise typer.Exit(code=1) from None
+    assert provider is not None  # ai_active guarantees a provider or an exception
+    try:
+        status = provider.status()
+    finally:
+        provider.close()
+
+    table = Table(show_header=False, box=None, pad_edge=False)
+    table.add_column(style="cyan", no_wrap=True)
+    table.add_column()
+    table.add_row("Provider", _u(status.provider))
+    table.add_row(
+        "Endpoint",
+        f"{_u(status.endpoint)}  "
+        + ("[green](this machine)[/green]" if status.local else "[yellow](REMOTE)[/yellow]"),
+    )
+    table.add_row("Reachable", _OK if status.reachable else _FAIL)
+    table.add_row("Version", _u(status.version or "-"))
+    table.add_row("Model", f"{_u(status.model)}  " + (_OK if status.model_installed else _FAIL))
+    if status.installed_models:
+        table.add_row("Installed", _u(", ".join(status.installed_models)))
+    table.add_row("Prompt", PROMPT_VERSION)
+    console.print(table)
+    if status.problem:
+        console.print(f"\n[yellow]{_u(status.problem)}[/yellow]")
+        raise typer.Exit(code=1)
+    console.print("\n[green]Ready.[/green] [dim]sentinelflow ai analyze <alert id prefix>[/dim]")
+
+
+@ai_app.command("analyze")
+def ai_analyze(
+    alert_id: str = typer.Argument(..., help="Alert id, or a unique prefix of one."),
+) -> None:
+    """Ask the local model for an advisory analysis of one alert, and store it."""
+    from app.ai import AIAnalysisService, ProviderConfigurationError, build_provider
+    from app.database import repository
+
+    configure_logging()
+    settings = get_settings()
+    if not settings.ai_active:
+        console.print("[yellow]AI is off.[/yellow] See: sentinelflow ai status")
+        raise typer.Exit(code=1)
+    try:
+        provider = build_provider(settings)
+    except ProviderConfigurationError as exc:
+        console.print(f"[red]AI will not be used:[/red] {_u(exc)}")
+        raise typer.Exit(code=1) from None
+
+    try:
+        with session_scope(settings) as session:
+            alert = _resolve_alert(session, alert_id)
+            console.print(
+                f"Asking {_u(settings.ollama_model)} about [bold]{_u(alert.title)}[/bold] "
+                f"[dim](up to {settings.ai_timeout_seconds}s)...[/dim]"
+            )
+            outcome = AIAnalysisService(
+                session, provider, requested_by="cli", actor=Actor.ANALYST
+            ).analyze_alert(alert.alert_id)
+            after = repository.get_alert(session, alert.alert_id)
+    finally:
+        if provider is not None:
+            provider.close()
+
+    if outcome.analysis is None:
+        console.print(
+            f"[red]No analysis stored ({outcome.kind.value}):[/red] {_u(outcome.problem or '')}"
+        )
+        raise typer.Exit(code=1)
+
+    _print_analysis(after or alert, outcome.analysis)
+    console.print(
+        "\n[dim]Stored as advisory output. The alert's severity, status and mappings are "
+        "unchanged; only an analyst decides.[/dim]\n"
+    )
+
+
+if __name__ == "__main__":  # pragma: no cover
+    app()

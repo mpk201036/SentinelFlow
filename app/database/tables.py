@@ -46,7 +46,7 @@ from app.models.ingestion import RejectionReason
 # ---------------------------------------------------------------------------
 # Schema versioning
 # ---------------------------------------------------------------------------
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 
 
 class SchemaVersion(Base):
@@ -364,19 +364,31 @@ class AlertRow(Base):
     )
     tags: Mapped[list[str]] = mapped_column(sa.JSON, nullable=False, default=list)
 
+    # Every collection has a defined order. Without one, SQLite returns rows
+    # in whatever order its chosen index yields, so the same alert could list
+    # its indicators differently from one read to the next - and the evidence
+    # shown to a model would not be reproducible.
     primary_event: Mapped[EventRow] = relationship(foreign_keys=[primary_event_id], lazy="joined")
-    events: Mapped[list[EventRow]] = relationship(secondary=alert_events)
+    events: Mapped[list[EventRow]] = relationship(
+        secondary=alert_events, order_by="EventRow.timestamp"
+    )
     detections: Mapped[list[DetectionRow]] = relationship(
-        back_populates="alert", cascade="all, delete-orphan"
+        back_populates="alert",
+        cascade="all, delete-orphan",
+        order_by="(DetectionRow.detected_at, DetectionRow.rule_id)",
     )
     indicators: Mapped[list[IndicatorRow]] = relationship(
-        secondary=alert_indicators, back_populates="alerts"
+        secondary=alert_indicators,
+        back_populates="alerts",
+        order_by="(IndicatorRow.indicator_type, IndicatorRow.value)",
     )
     mitre_mappings: Mapped[list[MitreMappingRow]] = relationship(
-        back_populates="alert", cascade="all, delete-orphan"
+        back_populates="alert",
+        cascade="all, delete-orphan",
+        order_by="(MitreMappingRow.technique_id, MitreMappingRow.source_rule_id)",
     )
     notes: Mapped[list[AnalystNoteRow]] = relationship(
-        back_populates="alert", cascade="all, delete-orphan"
+        back_populates="alert", cascade="all, delete-orphan", order_by="AnalystNoteRow.created_at"
     )
     ai_analyses: Mapped[list[AIAnalysisRow]] = relationship(
         back_populates="alert", cascade="all, delete-orphan"
@@ -471,6 +483,16 @@ class AIAnalysisRow(Base):
     injection_suspected: Mapped[bool] = mapped_column(sa.Boolean, nullable=False, default=False)
     truncated: Mapped[bool] = mapped_column(sa.Boolean, nullable=False, default=False)
 
+    # Written by SentinelFlow after the model answers, never by the model.
+    # Server defaults match the version 5 migration, so a migrated database and
+    # a fresh one have the same columns.
+    injection_signals: Mapped[list[str]] = mapped_column(
+        sa.JSON, nullable=False, default=list, server_default=sa.text("'[]'")
+    )
+    grounding_notes: Mapped[list[str]] = mapped_column(
+        sa.JSON, nullable=False, default=list, server_default=sa.text("'[]'")
+    )
+
     alert: Mapped[AlertRow] = relationship(back_populates="ai_analyses")
     statements: Mapped[list[AIStatementRow]] = relationship(
         back_populates="analysis", cascade="all, delete-orphan", order_by="AIStatementRow.position"
@@ -494,6 +516,9 @@ class AIStatementRow(Base):
         enum_column(StatementType, "statement_type"), nullable=False
     )
     text: Mapped[str] = mapped_column(sa.Text, nullable=False)
+    downgraded: Mapped[bool] = mapped_column(
+        sa.Boolean, nullable=False, default=False, server_default=sa.false()
+    )
 
     analysis: Mapped[AIAnalysisRow] = relationship(back_populates="statements")
 

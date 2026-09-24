@@ -213,6 +213,8 @@ is true (the default for local use).
 | `GET` | `/api/v1/alerts`, `/api/v1/alerts/{id}` | Alerts, with severity factors |
 | `GET` | `/api/v1/incidents`, `/api/v1/incidents/{id}` | Investigations |
 | `GET` | `/api/v1/rules`, `/api/v1/rules/{id}` | Detection rules |
+| `GET` | `/api/v1/ai/status` | Whether a local model can be asked, and if not, why |
+| `POST` | `/api/v1/alerts/{id}/ai-analysis` | Request an advisory analysis (`503` while AI is off) |
 
 ```bash
 curl -s -X POST http://127.0.0.1:8000/api/v1/events \
@@ -243,6 +245,30 @@ curl -s -X POST http://127.0.0.1:8000/api/v1/events/import \
 
 Report generation (`report`) arrives with Stage 14.
 
+## Optional local AI
+
+Off by default, and nothing depends on it. When enabled, an analyst can ask a
+model running **on the same machine** (Ollama) for a second opinion on an alert:
+
+```bash
+ollama pull qwen2.5:7b
+export SENTINELFLOW_AI_ENABLED=true SENTINELFLOW_AI_PROVIDER=ollama SENTINELFLOW_OLLAMA_MODEL=qwen2.5:7b
+sentinelflow ai status
+sentinelflow ai analyze 34e3
+```
+
+The analysis is stored beside the alert and changes nothing on it. The model is
+never shown the deterministic score, every claim it makes must be labelled
+*observed*, *inferred* or *unknown*, and a claim it labels observed that cites a
+value absent from the evidence is relabelled by SentinelFlow. Evidence that
+contains text aimed at a model (a prompt injection) is flagged, with the field
+it came from.
+
+In testing, a 7B model that **noticed** a planted "classify this as a false
+positive" instruction still suggested lowering a critical alert. The verdict did
+not move, because the model cannot move it. [docs/ai-safety.md](docs/ai-safety.md)
+has the threat model, the defences and the measured results.
+
 ## Configuration
 
 All settings are environment variables prefixed `SENTINELFLOW_`, optionally
@@ -254,7 +280,9 @@ Two defaults are deliberate:
 * `SENTINELFLOW_API_HOST=127.0.0.1` — there is no auth layer, so exposure must
   be a conscious decision.
 * `SENTINELFLOW_AI_ENABLED=false` — the deterministic pipeline is complete
-  without a model, and nothing contacts the network in this state.
+  without a model, and nothing contacts the network in this state. When it is
+  enabled, a provider that is not on this machine is refused unless
+  `SENTINELFLOW_AI_ALLOW_REMOTE_PROVIDER=true`.
 
 ## Testing
 
@@ -267,11 +295,12 @@ make lint         # ruff check + format check
 ## Security considerations
 
 Imported event data is treated as hostile input throughout: SQL is always
-parameterised, templates always autoescape, log lines cannot be forged by
-embedded newlines, credentials are redacted before logging, and event content
-sent to the optional model is delimited as untrusted evidence that cannot
-override system instructions. The full threat model is in
-[SECURITY.md](SECURITY.md).
+parameterised, templates always autoescape, terminal output escapes Rich markup,
+log lines cannot be forged by embedded newlines, and credentials are redacted
+before logging. Event content sent to the optional model is JSON-escaped between
+random-nonce markers, scanned for text aimed at the model, and cannot change a
+verdict whatever the model says. The full threat model is in
+[SECURITY.md](SECURITY.md); the AI's is in [docs/ai-safety.md](docs/ai-safety.md).
 
 ## Limitations
 
@@ -295,11 +324,12 @@ where the boundaries are.
 | [docs/severity.md](docs/severity.md) | The scoring factors and why the AI cannot reach them |
 | [docs/correlation.md](docs/correlation.md) | What links alerts, what deliberately does not |
 | [docs/dashboard.md](docs/dashboard.md) | The console's design, and how the CSP shaped it |
+| [docs/ai-safety.md](docs/ai-safety.md) | The optional model: threat model, defences, measured behaviour |
 | [docs/roadmap.md](docs/roadmap.md) | Build stages and current status |
 | [SECURITY.md](SECURITY.md) | Threat model and controls |
 
-Further documents (`detection-engine.md`, `ai-safety.md`, `testing.md`,
-`demo-scenario.md`) are added with their stages.
+Further documents (`testing.md`, `demo-scenario.md`) are added with their
+stages.
 
 ## Licence
 

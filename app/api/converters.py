@@ -145,9 +145,13 @@ def ai_analysis(analysis: AIAnalysis) -> schemas.AIAnalysisOut:
         generated_at=analysis.generated_at,
         provider=analysis.provider,
         model=analysis.model,
+        duration_ms=analysis.duration_ms,
+        prompt_version=analysis.prompt_version,
         summary=analysis.summary,
         statements=[
-            schemas.AIStatementOut(statement_type=s.statement_type.value, text=s.text)
+            schemas.AIStatementOut(
+                statement_type=s.statement_type.value, text=s.text, downgraded=s.downgraded
+            )
             for s in analysis.statements
         ],
         suspicious_observations=list(analysis.suspicious_observations),
@@ -159,6 +163,8 @@ def ai_analysis(analysis: AIAnalysis) -> schemas.AIAnalysisOut:
         is_advisory=analysis.is_advisory,
         injection_suspected=analysis.injection_suspected,
         truncated=analysis.truncated,
+        injection_signals=list(analysis.injection_signals),
+        grounding_notes=list(analysis.grounding_notes),
         disclaimer=AIAnalysis.DISCLAIMER,
     )
 

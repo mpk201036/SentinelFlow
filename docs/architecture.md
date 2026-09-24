@@ -53,14 +53,17 @@ sequenceDiagram
     P->>P: deterministic severity
     P->>P: correlation window
     P->>DB: event, alert, indicators, mappings, incident
-    opt AI enabled
-        P->>AI: structured evidence, delimited as untrusted
-        AI-->>P: advisory analysis (schema validated)
-        P->>DB: ai_analysis (separate table)
-    end
     A->>DB: review, status change, notes
+    opt AI enabled, on request
+        A->>AI: ai analyze <alert>: stored evidence, nonce-delimited, no score
+        AI-->>DB: advisory analysis (schema validated, grounded) + audit entries
+    end
     DB->>A: investigation report
 ```
+
+The model is consulted on an analyst's request, never by the pipeline: triage,
+scoring and correlation run identically with AI on or off, and nothing in the
+pipeline imports `app.ai`. See [ai-safety.md](ai-safety.md).
 
 ## 4. Why these technology choices
 
@@ -110,8 +113,10 @@ the important points are:
 2. **Content stays untrusted after validation.** Valid JSON can still contain a
    prompt-injection payload or an XSS attempt in `command_line`. Escaping and
    delimiting happen at every output sink, not once at the entrance.
-3. **The AI is a leaf node.** It reads from the pipeline and writes only to its
-   own table. No other component reads its output to make a decision.
+3. **The AI is a leaf node.** It reads stored alerts and writes only to its own
+   tables and the audit log. No other component reads its output to make a
+   decision, and SentinelFlow's checks on that output are stored apart from the
+   model's words.
 
 ## 6. Extension points
 

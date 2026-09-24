@@ -14,9 +14,11 @@ from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import sessionmaker
 
 from app import __version__
+from app.ai.providers import ProviderConfigurationError, build_provider
+from app.api.dependencies import AIState
 from app.api.errors import register_error_handlers
 from app.api.middleware import install_middleware
-from app.api.routes import alerts, events, incidents, operations, rules
+from app.api.routes import ai, alerts, events, incidents, operations, rules
 from app.core.config import Settings, get_settings
 from app.database.session import create_db_engine
 from app.web import STATIC_DIR
@@ -32,11 +34,17 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     """
     cfg = settings or get_settings()
     engine = create_db_engine(cfg)
+    ai_state = _build_ai_state(cfg)
 
     @asynccontextmanager
-    async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+    async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         yield
         engine.dispose()
+        # Read from app.state, not the closure, so a provider swapped in
+        # after construction (tests do this) is the one that gets closed.
+        provider = app.state.ai.provider
+        if provider is not None:
+            provider.close()
 
     app = FastAPI(
         lifespan=lifespan,
@@ -54,6 +62,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.settings = cfg
     app.state.engine = engine
     app.state.session_factory = sessionmaker(bind=engine, expire_on_commit=False, autoflush=False)
+    app.state.ai = ai_state
 
     install_middleware(app, cfg)
     register_error_handlers(app)
@@ -63,9 +72,26 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(alerts.router, prefix="/api/v1")
     app.include_router(incidents.router, prefix="/api/v1")
     app.include_router(rules.router, prefix="/api/v1")
+    app.include_router(ai.router, prefix="/api/v1")
 
     # The analyst console: same process, same pipeline, same security headers.
     app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
     app.include_router(console_router)
 
     return app
+
+
+def _build_ai_state(settings: Settings) -> AIState:
+    """The provider, or why there is none. Never raises: AI is optional."""
+    if not settings.ai_active:
+        return AIState(provider=None, problem=DISABLED_MESSAGE)
+    try:
+        return AIState(provider=build_provider(settings))
+    except ProviderConfigurationError as exc:
+        return AIState(provider=None, problem=str(exc))
+
+
+DISABLED_MESSAGE = (
+    "AI is disabled. SentinelFlow is complete without it. To enable a local model, set "
+    "SENTINELFLOW_AI_ENABLED=true and SENTINELFLOW_AI_PROVIDER=ollama."
+)

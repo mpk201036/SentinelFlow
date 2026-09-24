@@ -19,7 +19,9 @@ content of an ingested event**, and who wants to:
 | Inject script into the analyst's browser | Jinja2 autoescaping is asserted on, and no template or filter marks a value safe. Behind it, a Content-Security-Policy of `'self'` with no inline script or style means an injected script would have nowhere to run. Tests push `<script>` and attribute-breakout payloads through real ingestion into the rendered pages, and audit every template and rendered page for anything the policy would block. |
 | Forge or flood log entries | Newlines are escaped and control characters stripped before logging; messages are truncated. See `app/core/logging.py`. |
 | Leak credentials into logs | A redaction filter rewrites password/token/key-like values on every log record. |
-| Override the AI's instructions (prompt injection) | Event data is passed to the model inside explicit untrusted-evidence delimiters, never concatenated into the system prompt, and the model's output is schema-validated before storage. The AI output can never change an alert's official severity. |
+| Override the AI's instructions (prompt injection) | Event data is JSON-escaped and placed between markers carrying a per-request random nonce, never in the system prompt; the rules are repeated after the data. A heuristic scan flags text aimed at a model and names the field. The reply must match a fixed schema, keys claiming authority (`severity`, `status` ...) are discarded, and "observed" claims the evidence does not support are relabelled. Nothing the model says can change an alert. See [docs/ai-safety.md](docs/ai-safety.md), including a measured case where a model was steered and the verdict held. |
+| Exfiltrate evidence through the AI provider | The provider must be on loopback unless `SENTINELFLOW_AI_ALLOW_REMOTE_PROVIDER` is set. The client follows no redirects, ignores proxy environment variables and caps the response size. The provider URL may not carry credentials. |
+| Restyle or crash the analyst's terminal | Rich reads `[...]` as markup: an event with `[/]` in its command line used to crash `sentinelflow alert`, and `[link=...]` could plant a link. Every value that came from an event, a file or a model is escaped before the CLI prints it. |
 | Exhaust memory or disk | Upload size, event count and per-field length are capped by configuration. |
 | Escape the data directory via a crafted path | No network-reachable endpoint takes a filesystem path: uploads arrive as *content*, and the filename is reduced to its final component and used only to choose a parser — never opened. For any caller whose path does cross a trust boundary, `resolve_within` resolves the path first, symlinks included, and only then checks it against an allow-list; checking before resolution is the classic mistake. |
 | Double every event by replaying a request | Ingestion is idempotent by content: a byte-identical batch is recognised as a retry and stored once. A flaky network cannot manufacture a brute-force alert. |
@@ -33,7 +35,12 @@ content of an ingested event**, and who wants to:
 
 * It does not execute, open or detonate any sample, file or URL found in an event.
 * It does not call out to commercial threat-intelligence services.
-* It does not make any network request at all when AI is disabled (the default).
+* It does not make any network request at all when AI is disabled (the default),
+  and when AI is enabled it sends evidence only to a model on this machine unless
+  told otherwise.
+* It does not let a model decide. The model is not shown the deterministic
+  score, and its suggestion is stored and displayed beside the verdict, never in
+  place of it.
 * It does not auto-close, auto-escalate or auto-remediate. A human decides.
 * It does not silently discard input. Every imported record becomes an event
   or a rejection with a stated reason, so a gap in the data is visible rather

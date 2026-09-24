@@ -190,6 +190,13 @@ class AlertSummary(ApiModel):
 class AIStatementOut(ApiModel):
     statement_type: str
     text: str
+    downgraded: bool = Field(
+        default=False,
+        description=(
+            "Set by SentinelFlow: the model said observed, but the statement cites something "
+            "the evidence does not contain."
+        ),
+    )
 
 
 class AIAnalysisOut(ApiModel):
@@ -199,6 +206,8 @@ class AIAnalysisOut(ApiModel):
     generated_at: datetime
     provider: str
     model: str
+    duration_ms: int | None = None
+    prompt_version: str | None = None
     summary: str
     statements: list[AIStatementOut] = Field(default_factory=list)
     suspicious_observations: list[str] = Field(default_factory=list)
@@ -213,7 +222,31 @@ class AIAnalysisOut(ApiModel):
     is_advisory: bool = Field(description="Always true. AI output is never authoritative.")
     injection_suspected: bool
     truncated: bool
+    injection_signals: list[str] = Field(
+        default_factory=list,
+        description="Written by SentinelFlow: text in the evidence that addressed the model.",
+    )
+    grounding_notes: list[str] = Field(
+        default_factory=list,
+        description="Written by SentinelFlow: claims it could not match to the evidence.",
+    )
     disclaimer: str
+
+
+class AIStatusOut(ApiModel):
+    """Whether AI analysis is available, and if not, why not."""
+
+    enabled: bool
+    provider: str
+    model: str | None = None
+    endpoint: str | None = None
+    local: bool | None = Field(default=None, description="True when the provider is loopback.")
+    reachable: bool = False
+    model_installed: bool = False
+    version: str | None = None
+    installed_models: list[str] = Field(default_factory=list)
+    prompt_version: str
+    problem: str | None = None
 
 
 class AlertDetail(AlertSummary):

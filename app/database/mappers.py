@@ -348,6 +348,8 @@ def ai_analysis_to_row(analysis: AIAnalysis) -> AIAnalysisRow:
         is_advisory=True,
         injection_suspected=analysis.injection_suspected,
         truncated=analysis.truncated,
+        injection_signals=list(analysis.injection_signals),
+        grounding_notes=list(analysis.grounding_notes),
     )
     row.statements = [
         AIStatementRow(
@@ -356,6 +358,7 @@ def ai_analysis_to_row(analysis: AIAnalysis) -> AIAnalysisRow:
             position=index,
             statement_type=statement.statement_type,
             text=statement.text,
+            downgraded=statement.downgraded,
         )
         for index, statement in enumerate(analysis.statements)
     ]
@@ -373,7 +376,8 @@ def row_to_ai_analysis(row: AIAnalysisRow) -> AIAnalysis:
         prompt_version=row.prompt_version,
         summary=row.summary,
         statements=[
-            AIStatement(statement_type=s.statement_type, text=s.text) for s in row.statements
+            AIStatement(statement_type=s.statement_type, text=s.text, downgraded=s.downgraded)
+            for s in row.statements
         ],
         suspicious_observations=list(row.suspicious_observations),
         possible_explanations=list(row.possible_explanations),
@@ -383,6 +387,8 @@ def row_to_ai_analysis(row: AIAnalysisRow) -> AIAnalysis:
         suggested_severity_rationale=row.suggested_severity_rationale,
         injection_suspected=row.injection_suspected,
         truncated=row.truncated,
+        injection_signals=list(row.injection_signals),
+        grounding_notes=list(row.grounding_notes),
     )
 
 

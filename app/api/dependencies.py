@@ -10,13 +10,15 @@ defaults instead.
 
 from __future__ import annotations
 
+import threading
 from collections.abc import Iterator
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Annotated
 
 from fastapi import Depends, Query, Request
 from sqlalchemy.orm import Session
 
+from app.ai.providers import ModelProvider
 from app.core.config import Settings
 from app.detection import RuleSet, load_rules
 from app.mitre import Catalogue, get_catalogue
@@ -55,6 +57,25 @@ def catalogue() -> Catalogue:
 
 
 @dataclass
+class AIState:
+    """The app's model provider, or the reason it has none.
+
+    ``lock`` allows one analysis at a time. A local model shares one GPU, so
+    a second request would only slow the first down, and an unbounded queue
+    of them is a cheap way to make the console unusable.
+    """
+
+    provider: ModelProvider | None
+    problem: str | None = None
+    lock: threading.Lock = field(default_factory=threading.Lock)
+
+
+def ai_state(request: Request) -> AIState:
+    state: AIState = request.app.state.ai
+    return state
+
+
+@dataclass
 class Pagination:
     """Bounded pagination. One request cannot ask for everything."""
 
@@ -74,3 +95,4 @@ SettingsDep = Annotated[Settings, Depends(settings_dependency)]
 RulesDep = Annotated[RuleSet, Depends(rule_set)]
 CatalogueDep = Annotated[Catalogue, Depends(catalogue)]
 PageDep = Annotated[Pagination, Depends(pagination)]
+AIDep = Annotated[AIState, Depends(ai_state)]

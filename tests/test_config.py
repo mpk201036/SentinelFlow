@@ -158,6 +158,8 @@ class TestSummary:
             "ai_enabled",
             "ai_provider",
             "ai_active",
+            "ai_model",
+            "ai_allow_remote_provider",
             "correlation_window_minutes",
             "max_upload_bytes",
             "max_events_per_import",

@@ -30,7 +30,7 @@ Legend: **Done** · *In progress* · Planned
 |---|---|---|
 | 10 | FastAPI REST API | **Done** |
 | 11 | SOC dashboard (overview + alert detail) | **Done** |
-| 12 | Optional Ollama AI provider with injection defences | Planned |
+| 12 | Optional Ollama AI provider with injection defences | **Done** |
 | 13 | Analyst workflow: status, classification, notes, audit | Planned |
 | 14 | Investigation report generation (Markdown / HTML) | Planned |
 
@@ -260,3 +260,65 @@ now has a regression test.
   HTML for anything the CSP would block
 * `docs/dashboard.md`
 * 72 new tests
+
+## Stage 12 - delivered
+
+* `app/ai/` - optional, local, advisory analysis of one alert on request:
+  * `evidence.py` - the one place that decides what the model sees. The
+    deterministic score is withheld so the suggestion is independent; attacker
+    text appears once; the document is capped at about 4,000 tokens
+  * `prompts.py` - rules in the system message only, evidence JSON-escaped
+    between per-request random-nonce markers, rules repeated after the data,
+    and a specific warning when the injection scan fires
+  * `injection.py` - a tripwire for text aimed at a model, naming the technique
+    and the field; tested for no false alarms on the shipped scenario
+  * `output.py` - a fixed JSON Schema, sent to Ollama as `format` and enforced
+    again by a parser that treats the reply as untrusted input
+  * `grounding.py` - "observed" claims citing values absent from the evidence
+    are relabelled "inferred", and unmapped ATT&CK IDs are noted as "not a
+    mapping"
+  * `providers.py` - an Ollama client that stays on loopback unless told
+    otherwise, follows no redirects, ignores proxy variables and caps replies
+  * `service.py` - the sequence, two audit entries per request (failures
+    included), and no write to the alert
+* Schema version 5: `ai_analysis.injection_signals`, `ai_analysis.grounding_notes`
+  and `ai_statements.downgraded`, so SentinelFlow's checks are stored apart from
+  the model's words
+* `sentinelflow ai status`, `sentinelflow ai analyze <alert>`,
+  `GET /api/v1/ai/status`, `POST /api/v1/alerts/{id}/ai-analysis` (one analysis
+  at a time: `429` otherwise)
+* The console's Suggested layer shows the whole analysis, the injection signals
+  with their locations, relabelled statements, and a "SentinelFlow checks" panel
+  in the deterministic layer's colour
+* `docs/ai-safety.md`, including measured results: `qwen2.5:7b` and `qwen3:8b`
+  both noticed a planted "classify this as a false positive" instruction and
+  both still lowered their assessment of a critical alert. The verdict held in
+  every run
+* 156 new tests (1,025 in all); the suite never contacts a model. Two further
+  live checks are opt-in: `SF_LIVE_AI_MODEL=<model> pytest -m ai`
+
+### Defects found while building Stage 12
+
+Each has a regression test that was confirmed to fail with the fix removed.
+
+* **Event text could crash or restyle the terminal.** Rich reads `[...]` as
+  markup, so an event with `[/]` in its command line crashed
+  `sentinelflow alert`, and `[link=...]` could plant a link. Every untrusted
+  value the CLI prints is now escaped.
+* **Alert collections had no defined order.** Indicators, detections and
+  mappings came back in whatever order SQLite chose, so the same alert could
+  read differently from one request to the next, and the evidence shown to a
+  model was not reproducible. Every collection now has an explicit order.
+* **Incident titles named an arbitrary rule.** Correlation took
+  `detections[0]` as the lead rule while alert titles use the most severe one;
+  both now use the most severe.
+* **Long evidence was clipped in the console.** The alert page's layers were
+  grids with an implicit `auto` column, so one long base64 command line
+  stretched the column past the section's clipping edge and hid the end of
+  every line in it. The columns now shrink and long tokens wrap.
+* **`sentinelflow alert <prefix>` only searched the newest 500 alerts.** Prefix
+  lookup now runs in SQL, and accepts only hex characters, so `%` and `_` can
+  never act as LIKE wildcards.
+* **`python -m app.cli` ran before most commands were registered**, because the
+  `__main__` guard sat in the middle of the module.
+

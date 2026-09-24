@@ -11,6 +11,10 @@ Security notes
   network without a deliberate decision.
 * AI is **disabled by default**. The deterministic pipeline is complete without
   it, and the AI can never set an alert's official severity.
+* When AI is enabled, alert evidence is sent only to a model on this machine.
+  A provider URL that points anywhere else is refused unless
+  ``ai_allow_remote_provider`` is set, because evidence routinely contains
+  usernames, hostnames and internal addresses.
 * Ingestion limits exist to bound memory use and reject hostile input.
 """
 
@@ -141,8 +145,10 @@ class Settings(BaseSettings):
     ai_enabled: bool = False
     ai_provider: AIProvider = AIProvider.NONE
     ollama_base_url: str = "http://127.0.0.1:11434"
-    ollama_model: str = "llama3.1:8b"
+    ollama_model: Annotated[str, Field(min_length=1, max_length=128)] = "llama3.1:8b"
     ai_timeout_seconds: Annotated[int, Field(ge=1, le=600)] = 60
+    #: Off by default. Evidence leaves the machine only if this is set.
+    ai_allow_remote_provider: bool = False
 
     # ------------------------------------------------------------------
     # Validation
@@ -171,6 +177,29 @@ class Settings(BaseSettings):
         if raw in ("", ":memory:"):
             return value
         return f"sqlite:///{_resolve(raw)}"
+
+    @field_validator("ollama_base_url", mode="after")
+    @classmethod
+    def _validate_provider_url(cls, value: str) -> str:
+        """Accept a plain http(s) origin and nothing else.
+
+        Credentials in the URL would end up in logs and in ``config`` output,
+        and a query string or fragment has no meaning for the Ollama API, so
+        both are refused rather than silently carried along.
+        """
+        from urllib.parse import urlsplit
+
+        url = value.strip().rstrip("/")
+        parts = urlsplit(url)
+        if parts.scheme not in ("http", "https"):
+            raise ValueError("ollama_base_url must use http or https")
+        if not parts.hostname:
+            raise ValueError("ollama_base_url must include a host")
+        if parts.username or parts.password:
+            raise ValueError("ollama_base_url must not contain credentials")
+        if parts.query or parts.fragment:
+            raise ValueError("ollama_base_url must not contain a query or fragment")
+        return url
 
     @field_validator("log_file", mode="after")
     @classmethod
@@ -221,6 +250,24 @@ class Settings(BaseSettings):
         """
         return self.ai_enabled and self.ai_provider is not AIProvider.NONE
 
+    @property
+    def ai_endpoint_problem(self) -> str | None:
+        """Why the configured provider must not be contacted, or None if it may.
+
+        Checked every time a provider is built, so a remote URL is refused
+        whether AI was enabled from the environment, a ``.env`` file or code.
+        """
+        from urllib.parse import urlsplit
+
+        host = urlsplit(self.ollama_base_url).hostname or ""
+        if not is_loopback_host(host) and not self.ai_allow_remote_provider:
+            return (
+                f"the AI provider at {host!r} is not on this machine, and alert evidence "
+                "would be sent to it. Set SENTINELFLOW_AI_ALLOW_REMOTE_PROVIDER=true "
+                "to allow that deliberately."
+            )
+        return None
+
     @computed_field  # type: ignore[prop-decorator]
     @property
     def is_production(self) -> bool:
@@ -261,6 +308,8 @@ class Settings(BaseSettings):
             "ai_enabled": self.ai_enabled,
             "ai_provider": self.ai_provider.value,
             "ai_active": self.ai_active,
+            "ai_model": self.ollama_model,
+            "ai_allow_remote_provider": self.ai_allow_remote_provider,
             "correlation_window_minutes": self.correlation_window_minutes,
             "max_upload_bytes": self.max_upload_bytes,
             "max_events_per_import": self.max_events_per_import,

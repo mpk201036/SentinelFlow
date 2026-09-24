@@ -196,6 +196,7 @@ def alert_detail(
         notes=repository.list_notes(session, alert_id=alert.alert_id),
         analyses=repository.get_ai_analyses(session, alert.alert_id),
         ai_disclaimer=AIAnalysis.DISCLAIMER,
+        ai_problem=request.app.state.ai.problem,
         recommendations=recommendations,
     )
 

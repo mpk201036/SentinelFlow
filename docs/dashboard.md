@@ -29,7 +29,19 @@ absence is itself the point.
 
 When an AI analysis exists, its severity opinion is shown **beside** the
 deterministic verdict under separate labels, never in place of it. A prompt-
-injection flag, if the model's input tripped it, is shown above the analysis.
+injection flag, if the model's input tripped it, is shown above the analysis
+with each signal's technique and the field it was found in. Statements
+SentinelFlow relabelled from *observed* to *inferred* carry a dashed
+"relabelled from observed" tag, and SentinelFlow's own findings sit in a
+separate **SentinelFlow checks** panel with the Determined layer's accent,
+because they are the system's voice, not the model's. When AI is enabled but
+misconfigured (a remote provider, say), the layer says so and says why.
+
+Every list in the Determined and Suggested layers is a single-column grid with
+`minmax(0, 1fr)` tracks, and evidence text wraps anywhere. A 900-pixel base64
+command line has no break opportunities, so with an implicit `auto` track it
+stretched its column past the section's clipping edge and hid the end of every
+line beside it.
 
 Two typographic voices carry the same distinction: **monospace for machine
 evidence** (IPs, hashes, command lines, IDs) and **sans for human language**

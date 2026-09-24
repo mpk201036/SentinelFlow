@@ -18,6 +18,11 @@ cannot be mistaken for, or substituted for, a deterministic result:
   that looked like an attempt to steer the model. Event data is attacker-
   controlled text; treating that as a first-class possibility rather than an
   edge case is the point.
+* **What SentinelFlow checked is kept apart from what the model said.**
+  ``injection_signals``, ``grounding_notes`` and a statement's ``downgraded``
+  flag are written by SentinelFlow after the model has answered. The model's
+  own text is never edited to carry them, so an analyst can always tell the
+  two voices apart.
 
 None of this makes a language model trustworthy. It makes the *system* safe to
 use with an untrustworthy component in it.
@@ -47,6 +52,13 @@ class AIStatement(EvidenceModel):
 
     statement_type: StatementType
     text: str = Field(min_length=1, max_length=MAX_ENTRY_LENGTH)
+    downgraded: bool = Field(
+        default=False,
+        description=(
+            "Set by SentinelFlow, not the model: the model labelled this OBSERVED, but it "
+            "cites something that is not in the evidence, so it is shown as INFERRED."
+        ),
+    )
 
     @field_validator("text", mode="before")
     @classmethod
@@ -114,6 +126,18 @@ class AIAnalysis(EvidenceModel):
         default=False, description="Set when model output exceeded the size limits."
     )
 
+    # --- System checks: written by SentinelFlow, never by the model ------
+    injection_signals: list[str] = Field(
+        default_factory=list,
+        max_length=MAX_LIST_ENTRIES,
+        description="What in the evidence looked like instructions to the model, and where.",
+    )
+    grounding_notes: list[str] = Field(
+        default_factory=list,
+        max_length=MAX_LIST_ENTRIES,
+        description="Claims SentinelFlow could not match to the evidence, and what it did.",
+    )
+
     # ------------------------------------------------------------------
     # Validation
     # ------------------------------------------------------------------
@@ -143,6 +167,9 @@ class AIAnalysis(EvidenceModel):
                 data[name] = value[:cap]
                 truncated = True
         data["truncated"] = truncated
+        # A recorded signal and the flag must never disagree.
+        if data.get("injection_signals"):
+            data["injection_suspected"] = True
         return data
 
     @field_validator("provider", "model", mode="before")
@@ -166,6 +193,8 @@ class AIAnalysis(EvidenceModel):
         "possible_explanations",
         "analyst_questions",
         "recommended_next_steps",
+        "injection_signals",
+        "grounding_notes",
         mode="before",
     )
     @classmethod
@@ -212,3 +241,8 @@ class AIAnalysis(EvidenceModel):
         UI as a nudge, not as a rejection.
         """
         return bool(self.statements) and not self.unknown
+
+    @property
+    def downgraded(self) -> list[AIStatement]:
+        """Statements SentinelFlow relabelled because the evidence did not support them."""
+        return [s for s in self.statements if s.downgraded]

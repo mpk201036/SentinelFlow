@@ -263,7 +263,14 @@ class CorrelationEngine:
 
     def _title(self, group: CorrelationGroup, hosts: list[str]) -> str:
         worst = group.worst_alert
-        lead = worst.detections[0].rule_name if worst.detections else worst.title
+        # The most severe rule leads, as it does in an alert's own title.
+        # Taking detections[0] would name whichever row the database happened
+        # to return first.
+        lead = (
+            max(worst.detections, key=lambda d: d.rule_severity.rank).rule_name
+            if worst.detections
+            else worst.title
+        )
         others = len(group) - 1
         where = hosts[0] if len(hosts) == 1 else f"{len(hosts)} hosts"
         if others <= 0:

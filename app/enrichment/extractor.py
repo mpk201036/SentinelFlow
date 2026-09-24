@@ -184,6 +184,15 @@ class IOCExtractor:
     # ------------------------------------------------------------------
     # Pass 2: free text
     # ------------------------------------------------------------------
+    def scan_text(self, text: str) -> list[tuple[IndicatorType, str]]:
+        """Find indicators in any text, refanging a copy of it first.
+
+        Public so that other components - the AI grounding check in
+        particular - recognise an indicator exactly the way enrichment does,
+        rather than keeping a second set of patterns that could drift.
+        """
+        return self._scan_text(text)
+
     def _scan_text(self, text: str) -> list[tuple[IndicatorType, str]]:
         """Find indicators in free text, refanging a copy of it first."""
         scannable = refang(text[:MAX_SCAN_CHARS])
