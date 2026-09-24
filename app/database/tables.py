@@ -175,7 +175,7 @@ class EventRow(Base):
 # Detection rules (catalogue) and results
 # ---------------------------------------------------------------------------
 class DetectionRuleRow(Base):
-    """The rule catalogue loaded from ``rules/*.yaml``. Populated in Stage 6."""
+    """The rule catalogue loaded from ``rules/*.yaml``, by ``sentinelflow rules --sync``."""
 
     __tablename__ = "detection_rules"
 
@@ -258,7 +258,7 @@ class EventIndicatorRow(Base):
 
     Without this link an indicator only remembers the first event it came from,
     and "show me every event mentioning 192.0.2.77" would need a full scan of
-    every text field. Correlation in Stage 9 asks exactly that question, and a
+    every text field. Correlation asks exactly that question, and a
     value found inside a command line is not reachable any other way.
     """
 
@@ -278,7 +278,7 @@ class EventIndicatorRow(Base):
 # MITRE ATT&CK
 # ---------------------------------------------------------------------------
 class MitreTechniqueRow(Base):
-    """The ATT&CK catalogue. Loaded from ``data/mitre/`` in Stage 7."""
+    """The ATT&CK catalogue from ``data/mitre/``, by ``sentinelflow mitre --sync``."""
 
     __tablename__ = "mitre_techniques"
 

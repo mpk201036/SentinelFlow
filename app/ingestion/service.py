@@ -25,6 +25,7 @@ from pydantic import ValidationError
 from sqlalchemy.orm import Session
 
 from app.core.config import Settings, get_settings
+from app.core.display import counted
 from app.core.logging import get_logger
 from app.core.paths import check_file_size, resolve_within
 from app.database import repository
@@ -336,7 +337,7 @@ class IngestionService:
                 action=AuditAction.EVENT_INGESTED,
                 object_type="import_batch",
                 object_id=report.batch_id,
-                after=f"{report.accepted} events",
+                after=counted(report.accepted, "event"),
                 detail=report.summary(),
             ),
         )

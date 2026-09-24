@@ -232,7 +232,10 @@ class TestService:
                 tree = ast.parse(path.read_text(encoding="utf-8"))
                 for node in ast.walk(tree):
                     if isinstance(node, ast.ImportFrom) and node.module:
-                        assert not node.module.startswith("app.ai"), path
+                        assert node.module.split(".")[:2] != ["app", "ai"], path
+                    elif isinstance(node, ast.Import):  # ``import app.ai.service``
+                        for alias in node.names:
+                            assert alias.name.split(".")[:2] != ["app", "ai"], path
 
 
 # ===========================================================================

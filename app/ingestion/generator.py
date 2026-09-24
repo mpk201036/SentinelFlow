@@ -61,7 +61,7 @@ def generate_demo_scenario(base_time: datetime | None = None) -> list[GeneratedR
     7. a newly exposed service on the same host
 
     None of these steps is conclusive alone. Together they are what correlation
-    in Stage 9 is meant to surface — and what an analyst, not the tool, decides
+    is meant to surface — and what an analyst, not the tool, decides
     about.
     """
     start = (base_time or datetime.now(UTC) - timedelta(hours=1)).astimezone(UTC)

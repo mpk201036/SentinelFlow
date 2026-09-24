@@ -10,8 +10,8 @@ suite is organised, how it is run, and which tests stand behind each claim in
 ## Running it
 
 ```bash
-make test         # everything: about 1,270 tests, under a minute
-make test-fast    # unit tests only: about 800, in about 5 seconds
+make test         # everything: about 1,380 tests, under a minute
+make test-fast    # unit tests only: about 880, in about 5 seconds
 make check        # what CI runs: lint, types (app and tests), tests with coverage
 make fuzz         # the long property-based run: 2,000 examples per property
 ```
@@ -32,11 +32,11 @@ class inside a module marked `unit` was both kinds, and ran under `-m unit`.
 
 | Kind | What it covers | Count |
 |---|---|---|
-| `unit` | One component, no HTTP, no pipeline run | ~795 |
-| `integration` | Several layers: API, console, CLI, pipeline, database | ~475 |
+| `unit` | One component, no HTTP, no pipeline run | ~880 |
+| `integration` | Several layers: API, console, CLI, pipeline, database | ~500 |
 | `ai` | A real local model; skipped unless `SF_LIVE_AI_MODEL` is set | 2 |
 
-Beyond ordinary example-based tests, five techniques each cover something the
+Beyond ordinary example-based tests, six techniques each cover something the
 others cannot:
 
 | Technique | Where | What it catches |
@@ -46,6 +46,7 @@ others cannot:
 | **Query counting** | `test_query_counts.py` | A page that starts issuing a query per row |
 | **Reproducibility** | `test_reproducibility.py` | Any nondeterminism in scores, factors, mappings or grouping |
 | **End to end over HTTP** | `test_end_to_end.py` | Pieces that pass alone but no longer fit together |
+| **Documentation checks** | `test_docs.py` | A page that describes a command, flag, endpoint or rule the code no longer has |
 
 ## Coverage
 
@@ -90,6 +91,38 @@ failed for the right reason.
 | The verdict cannot be poisoned | `test_ai_boundary.py`, `test_ai_service.py::…verdict_does_not_move…`, `test_properties.py::TestWorkflowInvariants` |
 | Rate limiting and generic errors behave | `test_security_controls.py::TestRateLimit`, `::TestErrors`, `::TestHeadersEverywhere` |
 | The same events give the same verdict | `test_reproducibility.py` |
+
+## The documentation is tested too
+
+A security tool's documentation is part of its claims: an analyst who follows
+a page and gets an error stops trusting the rest. `tests/test_docs.py` reads
+every Markdown file and checks each concrete statement against the code:
+
+* every relative link and `#anchor` resolves;
+* every `sentinelflow` command and flag in a code block exists, found by
+  asking the CLI itself;
+* every `/api/v1/...` path is a real route, found in the OpenAPI schema;
+* every `SENTINELFLOW_*` variable is a real setting, `.env.example` included;
+* every repository path in a code span exists;
+* every detection rule and ATT&CK technique named is one SentinelFlow has,
+  except three named on purpose as examples of what gets refused;
+* every test named in the table below exists.
+
+It also checks the other direction: every command, every API route and every
+page in `docs/` is mentioned somewhere. The roadmap is history, so it is
+checked for links only.
+
+When these tests were written they found five false statements:
+- a `--no-extract` flag that never existed;
+- the claim that imports extract indicators, when triage does;
+- a link to a page not yet written;
+- an undocumented `generate` command;
+- an architecture page with four stale claims.
+
+That page also claimed every migration was tested, which was true only of the
+last two. `tests/test_migrations.py` now makes it true. It takes a current
+database, removes what one version added, stamps the version before, migrates,
+and checks nothing was lost.
 
 ## What testing found in Stage 15
 

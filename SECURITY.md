@@ -22,7 +22,9 @@ content of an ingested event**, and who wants to:
 | Override the AI's instructions (prompt injection) | Event data is JSON-escaped and placed between markers carrying a per-request random nonce, never in the system prompt; the rules are repeated after the data. A heuristic scan flags text aimed at a model and names the field. The reply must match a fixed schema, keys claiming authority (`severity`, `status` ...) are discarded, and "observed" claims the evidence does not support are relabelled. Nothing the model says can change an alert. See [docs/ai-safety.md](docs/ai-safety.md), including a measured case where a model was steered and the verdict held. |
 | Exfiltrate evidence through the AI provider | The provider must be on loopback unless `SENTINELFLOW_AI_ALLOW_REMOTE_PROVIDER` is set. The client follows no redirects, ignores proxy environment variables and caps the response size. The provider URL may not carry credentials. |
 | Restyle or crash the analyst's terminal | Rich reads `[...]` as markup: an event with `[/]` in its command line used to crash `sentinelflow alert`, and `[link=...]` could plant a link. Every value that came from an event, a file or a model is escaped before the CLI prints it. |
-| Exhaust memory or disk | Upload size, event count and per-field length are capped by configuration. |
+| Exhaust memory or disk | Request bodies, uploads, events per import and field lengths are capped by configuration. The body limit is enforced as bytes arrive, so a chunked request with no declared length is cut off at the limit rather than read in full. |
+| Fill the database in a loop | A per-client limit on requests per minute (`SENTINELFLOW_API_RATE_LIMIT_PER_MINUTE`, 600 by default) answers `429`. It is coarse on purpose: it stops a misconfigured importer, and a per-process counter would not stop a determined attacker. |
+| Learn the internals from an error | An unexpected failure returns a generic `500` with a request ID and nothing else; the detail goes to the log under that ID. Every response, refusals and errors included, carries the security headers. |
 | Escape the data directory via a crafted path | No network-reachable endpoint takes a filesystem path: uploads arrive as *content*, and the filename is reduced to its final component and used only to choose a parser — never opened. For any caller whose path does cross a trust boundary, `resolve_within` resolves the path first, symlinks included, and only then checks it against an allow-list; checking before resolution is the classic mistake. |
 | Double every event by replaying a request | Ingestion is idempotent by content: a byte-identical batch is recognised as a retry and stored once. A flaky network cannot manufacture a brute-force alert. |
 | Reach an unauthenticated console over the network | `sentinelflow serve` refuses any non-loopback bind address unless `--expose` is passed, and warns loudly when it is. |
@@ -70,6 +72,8 @@ content of an ingested event**, and who wants to:
 
 ## Reporting a vulnerability
 
-This is an educational portfolio project. If you find a security issue, please
-open a GitHub issue describing the problem and how to reproduce it. Do not
-include real credentials or real customer data in the report.
+This is an educational portfolio project, but a report is still welcome.
+Please report privately, through GitHub's **Report a vulnerability** button on
+the repository's Security tab, rather than in a public issue, so the problem
+is not published before it is fixed. Include what you did and what happened.
+Do not include real credentials or real customer data.

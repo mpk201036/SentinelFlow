@@ -79,8 +79,9 @@ recorded as stated facts:
 
 ```
 Why these alerts are grouped
-  - Linked by the same host (win-lab-01)
   - Linked by the same network address (10.0.0.5, 192.0.2.77)
+  - Linked by the same host (win-lab-01)
+  - Linked by the same indicator (ipv4:192.0.2.77)
   - Linked by the same account (lab-user, svc-helper)
   - 9 alerts spanning 11 minutes
   - 9 distinct rules matched: SF-0001, SF-0002, SF-0003, SF-0005, ...

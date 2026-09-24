@@ -21,6 +21,7 @@ import yaml
 from pydantic import ValidationError
 
 from app.core.config import get_settings
+from app.core.display import counted
 from app.core.logging import get_logger
 from app.detection.schema import RuleDefinition
 
@@ -71,7 +72,7 @@ class RuleSet:
         return counts
 
     def summary(self) -> str:
-        parts = [f"{len(self.rules)} rules ({len(self.enabled)} enabled)"]
+        parts = [f"{counted(len(self.rules), 'rule')} ({len(self.enabled)} enabled)"]
         if self.errors:
             parts.append(f"{len(self.errors)} failed to load")
         return ", ".join(parts)

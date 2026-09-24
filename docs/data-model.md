@@ -81,7 +81,7 @@ classDiagram
     class AuditEntry {
         +AuditAction action
         +str before / after
-        FROZEN - tamper-evident
+        FROZEN - append-only
     }
 
     SecurityEvent "1" --> "0..*" Indicator : extracted from
@@ -190,3 +190,42 @@ change only through `AnalystWorkflow`, which applies each change with a
 compare-and-swap on `updated_at` and writes an audit entry for it. See
 [workflow.md](workflow.md).
 
+
+## Where it is stored
+
+The domain models are not the tables. `app/database/tables.py` holds the
+SQLAlchemy mapping, `app/database/repository.py` converts between the two, and
+the rest of the application reads and writes through the repository.
+
+| Table | Holds | What changes after it is written |
+|---|---|---|
+| `events` | Normalised events, with the raw payload | Only `triaged_at`, set once |
+| `import_batches`, `rejected_events` | What each import accepted and refused, and why | Nothing |
+| `indicators`, `event_indicators` | Unique indicators, and every event each was seen in | Sighting counts and last-seen times |
+| `detection_rules`, `detections` | The rules as loaded, and every match | Rules are refreshed by `sentinelflow rules --sync`; matches never change |
+| `mitre_techniques`, `mitre_mappings` | The local ATT&CK catalogue, and each mapping with its reason | The catalogue is refreshed by `sentinelflow mitre --sync`; mappings never change |
+| `alerts` | The deterministic verdict and the workflow fields | Workflow fields, through `AnalystWorkflow`; the incident it joins |
+| `incidents` | Potential incidents | Correlation refreshes the title, members and time span; status and classification change only through `AnalystWorkflow` |
+| `ai_analysis`, `ai_statements` | Advisory analyses, and SentinelFlow's checks on them | Nothing |
+| `analyst_notes` | Notes | Nothing: a trigger refuses `UPDATE` |
+| `audit_log` | Every decision, import, triage, analysis and report | Nothing: triggers refuse `UPDATE` and `DELETE` |
+| `schema_version` | Which migrations have run | Appended to |
+
+### Schema versions
+
+`sentinelflow init-db` creates a new database at the current version, or brings
+an older one forward one migration at a time; each migration is idempotent and
+tested against a database at the version before it (`tests/test_migrations.py`).
+Nothing migrates on its own. Until `init-db` has run, every command that reads
+stored data stops and says so, and a database from a newer release is refused
+rather than guessed at. The one exception is `sentinelflow demo`, which creates
+a database when none exists, since it is the first command a newcomer runs.
+
+| Version | Added |
+|---|---|
+| 1 | Events, detections, indicators, ATT&CK, alerts, incidents, AI analysis, notes, audit log |
+| 2 | Import batches and rejected events, so a refused record is kept with its reason |
+| 3 | `event_indicators`, so an indicator links to every event it appeared in |
+| 4 | `events.triaged_at`, so each event is triaged once, however many times triage runs |
+| 5 | Columns for SentinelFlow's own checks on AI output: injection signals, grounding notes, downgraded statements |
+| 6 | Audit actions for the analyst workflow, and the triggers that make the audit log and notes append-only |

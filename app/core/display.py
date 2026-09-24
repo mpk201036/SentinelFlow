@@ -1,4 +1,4 @@
-"""How audit entries read, wherever they are shown.
+"""How things read, wherever they are shown.
 
 The console, the CLI and the exported reports all show the audit trail, and
 they must describe the same entry the same way. These helpers are that one
@@ -17,6 +17,11 @@ _LABELS = {
     "ai_analysis_requested": "AI analysis requested",
     "ai_analysis_stored": "AI analysis stored",
 }
+
+
+def counted(count: int, singular: str, plural: str | None = None) -> str:
+    """``1 incident``, ``2 incidents``: a count with its noun agreeing."""
+    return f"{count} {singular if count == 1 else plural or singular + 's'}"
 
 
 def humanise(value: str | None) -> str:

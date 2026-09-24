@@ -6,7 +6,7 @@ layer from the AI layer, and it is why every result carries the matched fields
 that caused it to fire. An analyst can check the working.
 
 The rule *definition* schema (the YAML on disk) belongs with the engine that
-interprets it, and arrives in Stage 6. What is modelled here is the engine's
+interprets it (``app/detection/schema.py``). What is modelled here is the engine's
 output: a snapshot of the rule as it was when it matched, so that later edits
 to a rule never rewrite the history of alerts it already produced.
 """

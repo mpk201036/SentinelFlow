@@ -5,9 +5,9 @@ sentinelflow serve          # http://127.0.0.1:8000
 ```
 
 A server-rendered console over the same pipeline as the REST API: same
-process, same port, same security headers. Five pages — **Overview**,
-**Alerts**, **alert detail**, **Investigations**, **Rules** — built from
-Jinja2 templates, one stylesheet and one small script.
+process, same port, same security headers. Six pages — **Overview**,
+**Alerts**, **alert detail**, **Investigations**, **investigation detail**,
+**Rules** — built from Jinja2 templates, one stylesheet and one small script.
 
 ## The design idea: strata of trust
 
@@ -62,7 +62,8 @@ The API's middleware sends:
 
 ```
 default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:;
-font-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'
+font-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none';
+form-action 'self'
 ```
 
 No inline script, no inline style, no remote origin of any kind. That is the
@@ -79,9 +80,9 @@ around:
   `app/web/charts.py` and emitted as SVG presentation attributes (`width`,
   `fill`, `d`), which the policy permits — unlike `style=""`, which it blocks.
   Doing the arithmetic in Python also makes it unit-testable.
-* **One static script**, `console.js`, for tooltips only. It writes content
-  with `textContent` and never parses HTML, because tooltip text can be
-  attacker-controlled.
+* **One static script**, `console.js`, for chart tooltips and for disabling a
+  button while its form is submitting. It writes content with `textContent`
+  and never parses HTML, because tooltip text can be attacker-controlled.
 * **System fonts, chosen deliberately.** `font-src 'self'` and the project's
   offline promise rule out webfonts from a CDN. The stacks prefer
   characterful installed faces (Avenir Next; SF Mono or Cascadia Mono).

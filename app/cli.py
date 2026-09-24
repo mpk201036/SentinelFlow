@@ -1,12 +1,8 @@
 """SentinelFlow command line interface.
 
-Stage 1 provides the commands needed to verify an installation:
-
-    sentinelflow version
-    sentinelflow config
-    sentinelflow doctor
-
-Later stages add ``init-db``, ``import``, ``demo``, ``report`` and ``serve``.
+Every command is listed in the README. Commands that read or write stored data
+check the schema version first, so a missing or out-of-date database gets an
+instruction rather than a traceback.
 """
 
 from __future__ import annotations
@@ -14,6 +10,8 @@ from __future__ import annotations
 import os
 import platform
 import sys
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
@@ -23,10 +21,12 @@ from rich.markup import escape
 from rich.table import Table
 
 from app import __version__
-from app.core.config import AIProvider, get_settings, is_loopback_host
+from app.core.config import AIProvider, Settings, get_settings, is_loopback_host
+from app.core.display import counted
 from app.core.logging import configure_logging, get_logger
-from app.database.init_db import database_status, initialize_database
+from app.database.init_db import current_version, database_status, initialize_database
 from app.database.session import get_engine, session_scope
+from app.database.tables import SCHEMA_VERSION
 from app.detection import DetectionEngine, load_rules, rules_by_technique
 from app.enrichment import EnrichmentService
 from app.ingestion import IngestionService, generate_dataset, group_by_adapter, list_adapters
@@ -91,6 +91,39 @@ def config() -> None:
             "\n[dim]AI is disabled. The deterministic pipeline is fully functional "
             "without it; no model will be contacted.[/dim]"
         )
+
+
+def _database_problem(settings: Settings) -> str | None:
+    """Why the database cannot be used as it is, or ``None`` when it can."""
+    version = current_version(get_engine(settings))
+    if version == SCHEMA_VERSION:
+        return None
+    if version == 0:
+        return "The database is not initialised. Run: sentinelflow init-db"
+    if version < SCHEMA_VERSION:
+        return (
+            f"The database is at schema version {version}; this release needs "
+            f"{SCHEMA_VERSION}. Run: sentinelflow init-db (nothing stored is lost)"
+        )
+    return (
+        f"The database is at schema version {version}, newer than this release "
+        f"understands ({SCHEMA_VERSION}). Upgrade SentinelFlow rather than use it."
+    )
+
+
+def _require_database(settings: Settings) -> None:
+    problem = _database_problem(settings)
+    if problem is not None:
+        console.print(f"[red]{problem}[/red]")
+        raise typer.Exit(code=1)
+
+
+@contextmanager
+def _session(settings: Settings) -> Iterator[Any]:
+    """A session on a database that is at the schema version this code expects."""
+    _require_database(settings)
+    with session_scope(settings) as session:
+        yield session
 
 
 @app.command("init-db")
@@ -344,7 +377,7 @@ def import_events(
     settings = get_settings()
 
     try:
-        with session_scope(settings) as session:
+        with _session(settings) as session:
             outcome = IngestionService(session, settings).ingest_file(
                 path, adapter_name=source, force=force, persist=not dry_run
             )
@@ -361,8 +394,10 @@ def import_events(
 
 @app.command()
 def generate(
+    # Not data/samples: those files are committed, and the generator anchors its
+    # timestamps to today, so writing there by default would rewrite them.
     out: Path = typer.Option(
-        Path("data/samples"), "--out", "-o", help="Directory to write sample files into."
+        Path("data/generated"), "--out", "-o", help="Directory to write sample files into."
     ),
     normal: int = typer.Option(40, "--normal", "-n", help="Number of benign background events."),
     seed: int = typer.Option(1337, "--seed", help="Seed, so output is reproducible."),
@@ -383,10 +418,10 @@ def generate(
     for adapter_name, items in sorted(grouped.items()):
         destination = out / f"{adapter_name}.json"
         destination.write_text(_json.dumps(items, indent=2) + "\n", encoding="utf-8")
-        table.add_row(str(destination), str(len(items)))
+        table.add_row(_u(destination), str(len(items)))
     console.print(table)
     console.print(
-        f"[dim]All data is synthetic. Import with: sentinelflow import {out}/sysmon.json[/dim]"
+        f"[dim]All data is synthetic. Import with: sentinelflow import {_u(out)}/sysmon.json[/dim]"
     )
 
 
@@ -397,11 +432,20 @@ def demo(
     """Generate the demonstration dataset and ingest it in one step."""
     configure_logging()
     settings = get_settings()
+    # The demo is the first thing a newcomer runs, so on a database that does
+    # not exist yet it creates one. An existing database, at any version, is
+    # never changed here: migrating is init-db's decision.
+    engine = get_engine(settings)
+    if current_version(engine) == 0:
+        initialize_database(engine)
+        console.print(
+            f"[green]Created a new database[/green] [dim]{_u(settings.database_url)}[/dim]"
+        )
     grouped = group_by_adapter(generate_dataset())
 
     outcomes: list[IngestionOutcome] = []
     ingested: list[Any] = []
-    with session_scope(settings) as session:
+    with _session(settings) as session:
         service = IngestionService(session, settings)
         for adapter_name, records in sorted(grouped.items()):
             outcome = service.ingest_mappings(
@@ -420,7 +464,7 @@ def demo(
     for outcome in outcomes:
         table.add_row(outcome.report.adapter, str(outcome.accepted), str(outcome.rejected))
     console.print(table)
-    console.print(f"[green]{sum(o.accepted for o in outcomes)} events ingested.[/green]")
+    console.print(f"[green]{counted(sum(o.accepted for o in outcomes), 'event')} ingested.[/green]")
     console.print(f"[green]{triage.summary()}[/green]")
     if triage.alerts:
         console.print(f"[bold]Severity:[/bold] {triage.severity_counts()}")
@@ -455,7 +499,7 @@ def rejections(
     from app.database import repository
 
     settings = get_settings()
-    with session_scope(settings) as session:
+    with _session(settings) as session:
         records = repository.list_rejections(session, limit=limit)
 
     if not records:
@@ -506,7 +550,7 @@ def indicators(
         )
         raise typer.Exit(code=1) from exc
 
-    with session_scope(settings) as session:
+    with _session(settings) as session:
         found = repository.list_indicators(
             session,
             indicator_type=selected,
@@ -555,7 +599,7 @@ def extract(
     configure_logging()
     settings = get_settings()
 
-    with session_scope(settings) as session:
+    with _session(settings) as session:
         summary = EnrichmentService(session).backfill(limit=limit)
 
     if not summary.events_processed:
@@ -645,7 +689,7 @@ def rules(
     if sync:
         from app.database import repository
 
-        with session_scope(settings) as session:
+        with _session(settings) as session:
             for rule in rule_set.rules:
                 repository.upsert_detection_rule(session, rule)
         console.print(f"[green]{len(rule_set)} rules synchronised to the database.[/green]")
@@ -655,9 +699,9 @@ def rules(
 def detect(
     limit: int = typer.Option(1000, "--limit", "-l", help="Maximum stored events to evaluate."),
 ) -> None:
-    """Run the detection rules over stored events and report what fires.
+    """Dry-run the detection rules over stored events: what would fire.
 
-    Nothing is written: alerts are created once the severity engine exists.
+    Nothing is written. Use it to try a rule change; `triage` is what creates alerts.
     """
     configure_logging()
     settings = get_settings()
@@ -667,7 +711,7 @@ def detect(
     if rule_set.errors:
         console.print(f"[yellow]{len(rule_set.errors)} rule(s) failed to load.[/yellow]")
 
-    with session_scope(settings) as session:
+    with _session(settings) as session:
         events = repository.list_events(session, limit=limit)
 
     if not events:
@@ -733,8 +777,8 @@ def detect(
         )
 
     console.print(
-        "[dim]Detections are deterministic and reproducible. Nothing was stored: "
-        "alert creation arrives with the severity engine.[/dim]"
+        "[dim]A dry run: nothing was stored. Run sentinelflow triage to create "
+        "alerts from events that have not been triaged yet.[/dim]"
     )
 
 
@@ -810,7 +854,7 @@ def mitre(
     if sync:
         from app.database import repository
 
-        with session_scope(settings) as session:
+        with _session(settings) as session:
             for technique in catalogue.techniques.values():
                 repository.upsert_technique(session, technique)
         console.print(f"[green]{len(catalogue)} techniques synchronised to the database.[/green]")
@@ -862,7 +906,7 @@ def triage(
     configure_logging()
     settings = get_settings()
 
-    with session_scope(settings) as session:
+    with _session(settings) as session:
         result = TriagePipeline(session, settings).process_stored(limit=limit, persist=not dry_run)
 
     if not result.events_processed:
@@ -918,7 +962,7 @@ def alerts(
         console.print(f"[red]{exc}[/red]")
         raise typer.Exit(code=1) from exc
 
-    with session_scope(settings) as session:
+    with _session(settings) as session:
         found = repository.list_alerts(
             session,
             status=wanted_status,
@@ -949,7 +993,7 @@ def alerts(
             _u(alert.title[:62]),
         )
     console.print(table)
-    console.print(f"[dim]{total} alerts total - {breakdown}[/dim]")
+    console.print(f"[dim]{counted(total, 'alert')} total - {breakdown}[/dim]")
 
 
 @app.command("alert")
@@ -961,7 +1005,7 @@ def show_alert(
 
     settings = get_settings()
 
-    with session_scope(settings) as session:
+    with _session(settings) as session:
         alert = _resolve_alert(session, alert_id)
         event = repository.get_event(session, alert.primary_event_id)
         notes = repository.list_notes(session, alert_id=alert.alert_id)
@@ -1133,7 +1177,7 @@ def correlate(
     configure_logging()
     settings = get_settings()
 
-    with session_scope(settings) as session:
+    with _session(settings) as session:
         result = CorrelationService(session, settings).correlate_pending(limit=limit)
 
     if not result.alerts_considered:
@@ -1172,7 +1216,7 @@ def incidents(
         console.print(f"[red]{exc}[/red]")
         raise typer.Exit(code=1) from exc
 
-    with session_scope(settings) as session:
+    with _session(settings) as session:
         found = repository.list_incidents(session, limit=limit)
         total = repository.count_incidents(session)
     if wanted is not None:
@@ -1209,7 +1253,7 @@ def show_incident(
 
     settings = get_settings()
 
-    with session_scope(settings) as session:
+    with _session(settings) as session:
         matches = repository.find_incident_ids_by_prefix(session, incident_id)
         found = repository.get_incident(session, matches[0]) if len(matches) == 1 else None
         if found is None:
@@ -1306,6 +1350,7 @@ def serve(
             f"[bold red]WARNING[/bold red] listening on {bind_host} with no authentication. "
             "Everything here is reachable by anyone who can reach this address."
         )
+    _require_database(settings)
 
     console.print(
         f"[bold]SentinelFlow[/bold] {__version__}  [dim]http://{bind_host}:{bind_port}[/dim]"
@@ -1397,7 +1442,7 @@ def decide(
     elif assign:
         assignee = settings.analyst_name if assign.strip().lower() == "me" else assign
 
-    with session_scope(settings) as session:
+    with _session(settings) as session:
         record = _resolve_record(session, record_id, incident=incident)
         workflow = AnalystWorkflow(session, analyst=settings.analyst_name, channel=Channel.CLI)
         try:
@@ -1443,7 +1488,7 @@ def note(
     from app.services.workflow import AnalystWorkflow, Channel, WorkflowError
 
     settings = get_settings()
-    with session_scope(settings) as session:
+    with _session(settings) as session:
         record = _resolve_record(session, record_id, incident=incident)
         workflow = AnalystWorkflow(session, analyst=settings.analyst_name, channel=Channel.CLI)
         try:
@@ -1467,7 +1512,7 @@ def history(
     from app.database import repository
 
     settings = get_settings()
-    with session_scope(settings) as session:
+    with _session(settings) as session:
         record = _resolve_record(session, record_id, incident=incident)
         object_id = record.incident_id if incident else record.alert_id
         entries = repository.list_audit(session, object_id=object_id, limit=500, oldest_first=True)
@@ -1488,7 +1533,9 @@ def history(
             _u(_clip(entry.detail or "", 90)),
         )
     console.print(table)
-    console.print(f"[dim]{len(entries)} entries. The audit log is append-only.[/dim]\n")
+    console.print(
+        f"[dim]{counted(len(entries), 'entry', 'entries')}. The audit log is append-only.[/dim]\n"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -1525,7 +1572,7 @@ def report(
         raise typer.Exit(code=1)
 
     settings = get_settings()
-    with session_scope(settings) as session:
+    with _session(settings) as session:
         record = _resolve_record(session, record_id, incident=incident)
         subject = record.incident_id if incident else record.alert_id
         generated = ReportService(
@@ -1563,7 +1610,7 @@ def verify_report_command(
         raise typer.Exit(code=1)
     content = path.read_bytes()
     settings = get_settings()
-    with session_scope(settings) as session:
+    with _session(settings) as session:
         result = verify_report(session, content)
 
     colour = "green" if result.status is VerificationStatus.VERIFIED else "red"
@@ -1650,7 +1697,7 @@ def ai_analyze(
         raise typer.Exit(code=1) from None
 
     try:
-        with session_scope(settings) as session:
+        with _session(settings) as session:
             alert = _resolve_alert(session, alert_id)
             console.print(
                 f"Asking {_u(settings.ollama_model)} about [bold]{_u(alert.title)}[/bold] "

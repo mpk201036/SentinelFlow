@@ -30,6 +30,7 @@ htmlcov/
 *.db-shm
 data/*.db
 data/uploads/
+data/generated/
 logs/
 *.log
 reports/out/

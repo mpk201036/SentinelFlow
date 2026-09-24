@@ -111,10 +111,14 @@ than silent.
 
 ## Using it
 
+Extraction is the first step of triage, so it runs whenever events are
+triaged: `sentinelflow triage`, `sentinelflow demo`, or an upload to the API
+with `triage` left on. `sentinelflow import` only stores events.
+
 ```bash
-sentinelflow import events.json            # extraction runs automatically
-sentinelflow import events.json --no-extract
-sentinelflow extract                       # backfill events not yet processed
+sentinelflow import events.json            # store only
+sentinelflow triage                        # extract indicators, detect, score
+sentinelflow extract                       # extract without triaging
 
 sentinelflow indicators --frequent         # most-sighted first
 sentinelflow indicators --type domain

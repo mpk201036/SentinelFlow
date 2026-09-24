@@ -23,6 +23,7 @@ from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from uuid import UUID
 
+from app.core.display import counted
 from app.core.logging import get_logger
 from app.mitre.catalogue import Catalogue, get_catalogue
 from app.models.detection import DetectionResult
@@ -60,7 +61,10 @@ class MappingResult:
         return list(seen)
 
     def summary(self) -> str:
-        parts = [f"{len(self.mappings)} mappings across {len(self.technique_ids)} techniques"]
+        parts = [
+            f"{counted(len(self.mappings), 'mapping')} across "
+            f"{counted(len(self.technique_ids), 'technique')}"
+        ]
         if self.unknown_techniques:
             parts.append(f"{len(set(self.unknown_techniques))} not in the catalogue")
         return ", ".join(parts)

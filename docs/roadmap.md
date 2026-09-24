@@ -39,7 +39,7 @@ Legend: **Done** · *In progress* · Planned
 | Stage | Scope | Status |
 |---|---|---|
 | 15 | Full test suite, integration tests, coverage | **Done** |
-| 16 | Documentation set | Planned |
+| 16 | Documentation set | **Done** |
 | 17 | End-to-end demo scenario | Planned |
 | 18 | Repository polish, screenshots, release | Planned |
 
@@ -457,4 +457,45 @@ Each code defect has a regression test confirmed to fail without its fix.
 * **Tests marked as two kinds**: database-backed classes inside "unit" modules
   ran under `-m unit`
 * **`assert` permitted in application code**, where `python -O` would strip it
+
+## Stage 16 - delivered
+
+* The documentation is tested: `tests/test_docs.py` checks every link and
+  anchor, every CLI command and flag, every API path, every setting, every
+  repository path, every rule and ATT&CK technique named, and every test cited
+  in docs/testing.md against the code. It also checks the other direction:
+  every command, route and page is documented somewhere
+* `tests/test_migrations.py`: each migration brings a database at the version
+  before it forward without losing data, and is safe to run twice. Versions 2
+  to 4 had never run in a test
+* README rewritten around a three-command quick start (`make setup`,
+  `sentinelflow demo`, `sentinelflow serve`), a "what to look at" guide, an
+  accurate pipeline diagram, and `generate` documented
+* `docs/architecture.md` rewritten: the diagram, the responsibility table and
+  the reasoning now match the code, including an honest account of what
+  moving off SQLite would touch
+* `docs/data-model.md` gained the tables, what may change in each, and the
+  schema version history; SECURITY.md gained the rate limit, the generic
+  error response and private vulnerability reporting
+* About 1,380 tests in all (about 110 new)
+
+### Defects found by Stage 16
+
+* **The quick start crashed**: on a new machine, `sentinelflow demo` ended in
+  a SQLAlchemy traceback because no command checked the schema first. Every
+  command that reads stored data now checks it and says what to run; the demo
+  creates a database when there is none; an out-of-date database is refused
+  until `init-db` migrates it, and one from a newer release is left alone
+* **`sentinelflow generate` rewrote the committed samples** by default, with
+  today's timestamps. It now writes to `data/generated/`, which is ignored
+* **Five false statements in the documentation**: a `--no-extract` flag that
+  never existed, "extraction runs on import" (triage does it), a dangling
+  link, a claim that migrations were tested, and four stale claims in the
+  architecture page. `detect` also still said alerts would "arrive with the
+  severity engine", eight stages after they did
+* **"1 incidents created"**: counts and nouns now agree in every summary
+* **The AI boundary test missed one import form**: it checked
+  `from app.ai import ...` but not `import app.ai.service`
+* **A regression in `serve`'s refusal would hang the suite** rather than fail
+  it; the CLI tests now stub the server out
 

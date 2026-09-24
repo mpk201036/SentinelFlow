@@ -117,7 +117,8 @@ enrich (indicators) -> detect (rules) -> map (ATT&CK) -> score -> alert
 One alert per event, carrying every rule that fired on it. That is the natural
 unit before correlation: an analyst opens an event and asks "what is wrong
 here?", and the answer is all of it at once rather than one notification per
-rule. Grouping *alerts* into incidents is Stage 9 and a different question.
+rule. Grouping *alerts* into incidents is correlation's job, and a different
+question; see [correlation.md](correlation.md).
 
 ### Triage is idempotent, and getting that right needed a schema change
 

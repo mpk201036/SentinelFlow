@@ -18,6 +18,7 @@ from dataclasses import dataclass, field
 from typing import Any
 from uuid import UUID
 
+from app.core.display import counted
 from app.core.logging import get_logger
 from app.detection.operators import OPERATORS
 from app.detection.schema import RAW_PREFIX, Condition, Logic, RuleDefinition
@@ -57,8 +58,8 @@ class DetectionRun:
 
     def summary(self) -> str:
         return (
-            f"{self.detection_count} detections from {self.rules_evaluated} rules "
-            f"over {self.events_evaluated} events"
+            f"{counted(self.detection_count, 'detection')} from "
+            f"{counted(self.rules_evaluated, 'rule')} over {counted(self.events_evaluated, 'event')}"
         )
 
 

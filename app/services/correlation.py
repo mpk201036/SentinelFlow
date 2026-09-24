@@ -41,6 +41,7 @@ from uuid import UUID
 from sqlalchemy.orm import Session
 
 from app.core.config import Settings, get_settings
+from app.core.display import counted
 from app.core.logging import get_logger
 from app.database import repository
 from app.models.alert import Alert
@@ -303,7 +304,7 @@ class CorrelationEngine:
 
         if first and last:
             minutes = int((last - first).total_seconds() // 60)
-            span = f"{minutes} minutes" if minutes else "under a minute"
+            span = counted(minutes, "minute") if minutes else "under a minute"
             reasons.append(f"{len(group)} alerts spanning {span}")
 
         rules = group.rule_ids()
@@ -367,13 +368,13 @@ class CorrelationResult:
 
     def summary(self) -> str:
         parts = [
-            f"{self.alerts_considered} alerts considered",
-            f"{len(self.created)} incidents created",
+            f"{counted(self.alerts_considered, 'alert')} considered",
+            f"{counted(len(self.created), 'incident')} created",
         ]
         if self.extended:
             parts.append(f"{len(self.extended)} extended")
         if self.singletons:
-            parts.append(f"{self.singletons} alerts remain standalone")
+            parts.append(f"{counted(self.singletons, 'alert')} left standalone")
         return ", ".join(parts)
 
 

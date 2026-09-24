@@ -25,6 +25,7 @@ from uuid import UUID
 from sqlalchemy.orm import Session
 
 from app.core.config import Settings, get_settings
+from app.core.display import counted
 from app.core.logging import get_logger
 from app.database import repository
 from app.detection import DetectionEngine, RuleSet, load_rules
@@ -71,10 +72,10 @@ class TriageResult:
 
     def summary(self) -> str:
         parts = [
-            f"{self.events_processed} events",
-            f"{self.indicators_found} indicators",
-            f"{self.detections} detections",
-            f"{self.alerts_created} alerts",
+            counted(self.events_processed, "event"),
+            counted(self.indicators_found, "indicator"),
+            counted(self.detections, "detection"),
+            counted(self.alerts_created, "alert"),
         ]
         if not self.persisted:
             parts.append("(dry run)")

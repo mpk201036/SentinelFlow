@@ -195,8 +195,9 @@ sentinelflow rules                  # list them
 sentinelflow rules --validate       # exits non-zero if any file is broken
 sentinelflow rules --by-technique   # ATT&CK coverage
 sentinelflow rules --sync           # mirror into the database
-sentinelflow detect                 # evaluate stored events and show what fires
+sentinelflow detect                 # dry run over stored events: what would fire
 ```
 
-`detect` stores nothing. Alerts are created once the severity engine exists,
-because an alert without a severity is not something an analyst can queue.
+`detect` stores nothing, which makes it the safe way to try a rule change
+against real events. `sentinelflow triage` is what creates alerts: it runs the
+same rules, then maps and scores what fired (see [severity.md](severity.md)).

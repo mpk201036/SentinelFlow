@@ -25,6 +25,17 @@ pytestmark = pytest.mark.integration
 SAMPLES = Path(__file__).resolve().parents[1] / "data" / "samples"
 
 
+@pytest.fixture(autouse=True)
+def _no_server(monkeypatch: pytest.MonkeyPatch) -> None:
+    """``serve`` is only ever expected to refuse here. If a check stops refusing,
+    the test should fail, not start a server and hang the suite."""
+
+    def refuse(*_args: object, **_kwargs: object) -> None:
+        raise AssertionError("sentinelflow serve started a server")
+
+    monkeypatch.setattr("uvicorn.run", refuse)
+
+
 @pytest.fixture(scope="module")
 def demo_env(tmp_path_factory: pytest.TempPathFactory) -> Iterator[dict[str, str]]:
     """One demo database, shared by every command in this module."""
@@ -134,3 +145,94 @@ def test_doctor_reports_on_a_working_install(demo_env: dict[str, str]) -> None:
     result = _run(demo_env, "doctor")
     assert "Traceback" not in result.output
     assert "database schema" in result.output
+
+
+# ---------------------------------------------------------------------------
+# Stage 16: a database that is missing or out of date gets an instruction
+# ---------------------------------------------------------------------------
+#: Commands that read or write stored data. Found writing the quick start:
+#: on a new machine ``sentinelflow demo`` ended in a SQLAlchemy traceback.
+DATA_COMMANDS: list[list[str]] = [
+    ["import", str(SAMPLES / "firewall.csv")],
+    ["rejections"],
+    ["indicators"],
+    ["extract"],
+    ["detect"],
+    ["triage"],
+    ["alerts"],
+    ["alert", "abcdef12"],
+    ["correlate"],
+    ["incidents"],
+    ["incident", "abcdef12"],
+    ["decide", "abcdef12", "--status", "investigating"],
+    ["note", "abcdef12", "A note."],
+    ["history", "abcdef12"],
+    ["report", "abcdef12", "--stdout"],
+    ["serve"],
+]
+
+
+@pytest.fixture
+def empty_env(tmp_path: Path) -> Iterator[dict[str, str]]:
+    """A database URL that points at nothing yet."""
+    env = {
+        "SENTINELFLOW_DATABASE_URL": f"sqlite:///{tmp_path / 'fresh.db'}",
+        "SENTINELFLOW_LOG_LEVEL": "WARNING",
+        "COLUMNS": "200",
+    }
+    yield env
+    reset_engine()
+    get_settings.cache_clear()
+
+
+def _stamp(env: dict[str, str], version: int) -> None:
+    import sqlite3
+
+    path = env["SENTINELFLOW_DATABASE_URL"].removeprefix("sqlite:///")
+    with sqlite3.connect(path) as connection:
+        connection.execute("DELETE FROM schema_version")
+        connection.execute(
+            "INSERT INTO schema_version (version, description, applied_at) "
+            "VALUES (?, 'stamped by a test', CURRENT_TIMESTAMP)",
+            (version,),
+        )
+
+
+@pytest.mark.parametrize("args", DATA_COMMANDS, ids=lambda a: a[0])
+def test_an_uninitialised_database_gets_an_instruction(
+    empty_env: dict[str, str], args: list[str]
+) -> None:
+    result = _run(empty_env, *args)
+    assert "Traceback" not in result.output, result.output
+    assert result.exit_code == 1, result.output
+    assert "not initialised. Run: sentinelflow init-db" in result.output
+
+
+def test_demo_creates_the_database_on_a_new_machine(empty_env: dict[str, str]) -> None:
+    result = _run(empty_env, "demo")
+    assert result.exit_code == 0, result.output
+    assert "Created a new database" in result.output
+    assert _run(empty_env, "alerts").exit_code == 0
+
+
+def test_an_out_of_date_database_is_refused_until_it_is_migrated(
+    empty_env: dict[str, str],
+) -> None:
+    assert _run(empty_env, "init-db").exit_code == 0
+    _stamp(empty_env, 5)
+
+    for args in (["alerts"], ["demo"]):  # the demo never migrates on its own
+        result = _run(empty_env, *args)
+        assert result.exit_code == 1, result.output
+        assert "schema version 5; this release needs" in result.output
+
+    assert _run(empty_env, "init-db").exit_code == 0
+    assert _run(empty_env, "alerts").exit_code == 0
+
+
+def test_a_database_from_a_newer_release_is_not_touched(empty_env: dict[str, str]) -> None:
+    assert _run(empty_env, "init-db").exit_code == 0
+    _stamp(empty_env, 99)
+    result = _run(empty_env, "alerts")
+    assert result.exit_code == 1
+    assert "newer than this release" in result.output

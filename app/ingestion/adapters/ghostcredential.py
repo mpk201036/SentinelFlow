@@ -8,7 +8,7 @@ ambiguous background noise.
 So this adapter sets ``source_confidence`` to HIGH. Note carefully what that
 does and does not mean. It is still a *claim by the source*, recorded in a field
 whose name says so, and it is still only an input to the deterministic severity
-engine in Stage 8. High-confidence deception is a strong signal, not a verdict,
+engine. High-confidence deception is a strong signal, not a verdict,
 and a decoy can still be tripped by a misconfigured backup agent or by the blue
 team's own testing — which is exactly why a human confirms.
 

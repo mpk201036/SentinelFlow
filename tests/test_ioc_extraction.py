@@ -364,4 +364,4 @@ class TestEnrichmentService:
         summary = EnrichmentService(db_session).enrich_events([source])
         assert summary.events_processed == 1
         assert summary.by_type == {"ipv4": 1, "process_name": 1}
-        assert "1 events" in summary.summary()
+        assert "1 event," in summary.summary()

@@ -14,6 +14,7 @@ from dataclasses import dataclass, field
 
 from sqlalchemy.orm import Session
 
+from app.core.display import counted
 from app.core.logging import get_logger
 from app.database import repository
 from app.enrichment.extractor import ExtractionResult, IOCExtractor
@@ -43,11 +44,11 @@ class EnrichmentSummary:
 
     def summary(self) -> str:
         parts = [
-            f"{self.events_processed} events",
-            f"{self.indicators_found} indicators ({self.indicators_new} new)",
+            counted(self.events_processed, "event"),
+            f"{counted(self.indicators_found, 'indicator')} ({self.indicators_new} new)",
         ]
         if self.events_truncated:
-            parts.append(f"{self.events_truncated} events hit the per-event limit")
+            parts.append(f"{counted(self.events_truncated, 'event')} hit the per-event limit")
         return ", ".join(parts)
 
 

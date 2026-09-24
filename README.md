@@ -7,17 +7,68 @@
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Cost](https://img.shields.io/badge/cost-%240-brightgreen)
 
-SentinelFlow ingests security events from multiple sources, normalises them,
-runs them through a **deterministic detection engine**, extracts indicators,
-maps observed behaviour to **MITRE ATT&CK**, scores severity, correlates
-related activity into potential incidents, and presents everything to an
-analyst in a SOC-style console — with an **optional, clearly-labelled local AI
-assistant** that helps the analyst think, but never decides.
+SentinelFlow takes security events from several sources and triages them the
+way a SOC analyst would. It extracts indicators, runs **deterministic detection
+rules**, maps what fired to **MITRE ATT&CK** with a stated reason, scores
+severity from named factors, and groups related alerts into **Potential
+Incidents**. An analyst reviews all of it in a web console, a CLI or a REST API.
+An **optional local AI** can be asked for a second opinion. It is clearly
+labelled, and it can never change a verdict.
 
-> **Status: in active development.** This project is being built in stages.
-> See [docs/roadmap.md](docs/roadmap.md) for exactly what is and is not done.
+> **Status:** the system is complete and tested. A guided demo walkthrough and
+> final repository polish are the two stages left;
+> [docs/roadmap.md](docs/roadmap.md) records every stage.
 
----
+## Quick start
+
+Needs Python 3.12+ and nothing else: no accounts, no keys, no paid services.
+
+```bash
+git clone https://github.com/mpk201036/SentinelFlow.git
+cd SentinelFlow
+make setup && source .venv/bin/activate
+sentinelflow demo       # create a database, ingest a scripted intrusion, triage and correlate it
+sentinelflow serve      # then open http://127.0.0.1:8000
+```
+
+The demo ingests 56 synthetic events from four sources and produces 9 alerts
+and 1 Potential Incident. Hidden among ordinary activity, and eleven minutes
+long on one host, it contains:
+- a burst of failed logons;
+- a success from an external address;
+- encoded PowerShell reaching out to the internet;
+- an executable dropped in a temporary directory;
+- a decoy credential being read;
+- a new account added to Administrators;
+- a service newly exposed to the network.
+
+Open the investigation, then its critical alerts.
+
+## What to look at
+
+- **The alert page keeps four kinds of statement apart.** Observed evidence,
+  deterministic analysis, the model's suggestion and the analyst's decision are
+  drawn as four separate layers, so they cannot be confused.
+  [docs/dashboard.md](docs/dashboard.md)
+- **Every point of severity is explained.** A score is a sum of named factors,
+  each with a sentence saying why it applied.
+  [docs/severity.md](docs/severity.md)
+- **The model cannot set a verdict, by construction.** Its severity is a
+  different type from the alert's. It is never shown the deterministic score.
+  A test fails if the pipeline ever imports the AI package.
+  [docs/ai-safety.md](docs/ai-safety.md)
+- **A prompt injection, measured.** A 7B model noticed a planted "classify this
+  as a false positive" instruction and still suggested lowering a critical
+  alert. The verdict held, because the model has no way to move it.
+- **History the database will not let anyone rewrite.** Every decision is
+  audited with who made it, when and why, and SQLite triggers refuse to edit or
+  delete the audit log. [docs/workflow.md](docs/workflow.md)
+- **Reports that are safe to paste into a ticket.** Hostile event text cannot
+  become a link or an image. Indicators are defanged, and each export is
+  fingerprinted so an edited copy is detected. [docs/reports.md](docs/reports.md)
+- **Documentation that is tested.** Every command, flag, endpoint, setting,
+  path, rule and ATT&CK technique these documents name is checked against the
+  code on every CI run. [docs/testing.md](docs/testing.md)
 
 ## The problem
 
@@ -43,62 +94,66 @@ Every alert separates five things, and never blurs them:
 |---|---|---|
 | **Observed evidence** | The raw, normalised event | Yes — it is fact |
 | **Detection results** | Transparent YAML rules | Yes — reproducible |
-| **Enrichment** | Local context and indicator extraction | Yes |
+| **Enrichment** | Indicator extraction and local environment context | Yes — reproducible |
 | **AI interpretation** | Optional local model | **No — advisory only** |
 | **Analyst decision** | A human | Yes — final |
 
-The AI can suggest a severity. It is rendered next to, and visually distinct
-from, the deterministic severity, and it is stored in a separate table. It can
-never write to the alert's official severity field. That constraint is enforced
-in code and covered by tests.
+The console draws them as four layers: detection and enrichment share one,
+because both are reproducible. The AI can suggest a severity. The suggestion is
+shown next to the deterministic severity and styled differently, and it is
+stored in a separate table. It can never be written to the alert's severity.
+The code enforces this, and tests cover it.
 
 ## Architecture
 
 ```mermaid
 flowchart TD
-    subgraph Sources
-        A1[REST API]
-        A2[JSON file]
-        A3[CSV file]
-        A4[Sysmon / Windows logs]
-        A5[DriftWatch / GhostCredential]
-        A6[Sample generator]
+    SRC["Sources<br/>REST API · JSON · NDJSON · CSV<br/>Sysmon · Windows Security · firewall<br/>DriftWatch · GhostCredential · generator"]
+    SRC --> ING["Ingestion<br/>adapters · limits · rejected records kept with a reason"]
+    ING --> TRI
+
+    subgraph TRI["Triage (deterministic)"]
+        direction LR
+        X["IOC extraction"] --> D["Detection rules"] --> M["ATT&CK mapping"] --> S["Severity"]
     end
 
-    A1 & A2 & A3 & A4 & A5 & A6 --> B[Ingestion adapters<br/>validation + limits]
-    B --> C[Normalisation<br/>canonical event schema]
-    C --> D[IOC extraction]
-    D --> E[Detection engine<br/>YAML rules]
-    E --> F[Enrichment]
-    F --> G[MITRE ATT&CK mapping]
-    G --> H[Severity engine<br/>deterministic score]
-    H --> I[Correlation<br/>potential incidents]
-    I --> DB[(SQLite)]
-
-    I -.optional.-> J[Local AI analysis<br/>Ollama - advisory only]
-    J -.separate table.-> DB
-
-    DB --> K[Analyst dashboard]
-    K --> L[Human review<br/>status - notes - classification]
-    L --> M[Investigation report<br/>Markdown / HTML]
-    L --> DB
+    TRI --> AL[("Alerts")]
+    AL --> COR["Correlation"] --> INC[("Potential Incidents")]
+    AL & INC --> UI["Analyst<br/>console · CLI · API"]
+    UI --> DEC["Decisions and notes<br/>append-only audit trail"]
+    UI --> REP["Reports<br/>Markdown · HTML · JSON"]
+    UI -.->|on request| AI["Local model<br/>advisory only"]
 ```
 
-Full detail: [docs/architecture.md](docs/architecture.md).
+Triage and correlation run when asked, never behind the analyst's back, and
+the model is consulted only on an analyst's request.
+[docs/architecture.md](docs/architecture.md) has the full design.
 
 ## Features
 
-- Multi-source ingestion: REST API, JSON, CSV, and a synthetic event generator
-- Canonical event schema that tolerates partial data from different sources
-- IOC extraction (IPv4/IPv6, domains, URLs, MD5/SHA1/SHA256, emails, paths)
-- Transparent detection engine — rules are YAML data, not buried Python
-- MITRE ATT&CK mapping with a stated reason for every mapping, from a local catalogue
-- Deterministic, explainable severity scoring
-- Alert correlation into *Potential Incidents* (never "confirmed compromise")
-- Analyst workflow: status, classification, notes, full audit trail
-- Investigation reports in Markdown and HTML
-- Optional local AI via Ollama — **off by default**, never authoritative
-- Runs entirely offline, for **$0**
+- **Ingestion** over the REST API or from JSON, NDJSON and CSV files, with
+  adapters for Sysmon, Windows Security, firewall logs and the sibling projects
+  DriftWatch and GhostCredential. Every refused record is kept, with the reason
+- **Indicator extraction**: IPv4 and IPv6 addresses, domains, URLs, MD5, SHA-1
+  and SHA-256 hashes, e-mail addresses, file paths and process names.
+  Defanged input is recognised, and the stored evidence is never edited
+- **15 detection rules** written as YAML data: field matches and thresholds,
+  validated when loaded, never executed
+- **ATT&CK mapping** from a local catalogue, with a reason for every mapping. A
+  technique the catalogue does not know is refused rather than rendered
+- **Deterministic severity** from additive, named factors, including local
+  context: critical hosts, privileged accounts and working hours
+- **Correlation** into Potential Incidents by shared host, account, address,
+  process chain or indicator. An incident summary never claims a compromise;
+  only an analyst can confirm one
+- **Analyst workflow**: status, classification, assignee and notes, with rules
+  for closing and reopening. A decision made against an out-of-date view is
+  refused, not merged
+- **Reports** in Markdown, HTML and JSON: escaped, defanged, fingerprinted and
+  verifiable
+- **Optional local AI** through Ollama. Off by default; its output is labelled,
+  grounded against the evidence and checked for prompt injection
+- **Runs entirely offline, for $0**
 
 ## Technology stack
 
@@ -109,11 +164,12 @@ Full detail: [docs/architecture.md](docs/architecture.md).
 | Validation | Pydantic v2 | Strict validation at every untrusted boundary |
 | Rules | YAML | Detections are data; adding one needs no code change |
 | AI (optional) | Ollama | Local, free, private — and removable |
-| Testing | pytest + ruff | Real suite, real linting, CI on every push |
+| CLI | Typer + Rich | Every console action is also a command |
+| Testing | pytest, Hypothesis, ruff, mypy | About 1,380 tests with property-based fuzzing; lint, types and coverage enforced in CI |
 
 ## Installation
 
-Requires **Python 3.12+**. No accounts, keys or paid services.
+Requires **Python 3.12+**.
 
 ```bash
 git clone https://github.com/mpk201036/SentinelFlow.git
@@ -135,13 +191,18 @@ sentinelflow doctor
 
 ## Usage
 
+Set up, and check the installation:
+
 ```bash
 sentinelflow version    # show the version
 sentinelflow config     # show effective configuration (no secrets)
 sentinelflow doctor     # environment and schema health check
-sentinelflow init-db    # create the database schema
+sentinelflow init-db    # create the database, or migrate an older one
 sentinelflow db-info    # schema version, table sizes, integrity settings
 ```
+
+`sentinelflow demo` creates the database if there is none. Every other command
+that reads stored data needs `init-db` first, and says so if it has not run.
 
 Import events, or generate a demonstration dataset:
 
@@ -152,6 +213,7 @@ sentinelflow import data/samples/firewall.csv
 sentinelflow import events.json --source windows_security --dry-run
 sentinelflow rejections                                # records that failed to parse
 sentinelflow demo                                      # generate and ingest a full scenario
+sentinelflow generate --normal 200 --seed 7            # write synthetic files to data/generated/
 ```
 
 Inspect what was extracted:
@@ -160,16 +222,16 @@ Inspect what was extracted:
 sentinelflow indicators --frequent      # most-sighted indicators first
 sentinelflow indicators --type domain
 sentinelflow indicators --external      # hide internal addresses
-sentinelflow extract                    # backfill events not yet processed
+sentinelflow extract                    # extract indicators without triaging
 ```
 
-Run the detection rules:
+Work with the detection rules:
 
 ```bash
 sentinelflow rules                      # list the 15 shipped rules
 sentinelflow rules --validate           # exits non-zero if any file is broken
 sentinelflow rules --by-technique       # ATT&CK coverage
-sentinelflow detect                     # evaluate stored events, show what fires
+sentinelflow detect                     # dry run over stored events: what would fire
 sentinelflow mitre --coverage           # ATT&CK tactic coverage, gaps included
 sentinelflow mitre --technique T1059.001
 ```
@@ -177,7 +239,7 @@ sentinelflow mitre --technique T1059.001
 Triage:
 
 ```bash
-sentinelflow triage                     # score stored events and create alerts
+sentinelflow triage                     # extract, detect, map and score new events into alerts
 sentinelflow alerts --open              # the queue
 sentinelflow alert 20ea                 # one alert in full, by id prefix
 sentinelflow correlate                  # group related alerts
@@ -210,6 +272,19 @@ The console shows each alert as four layers — **Observed**, **Determined**,
 **Suggested**, **Decided** — so evidence, deterministic analysis, optional AI
 opinion and the human decision can never be confused for one another. See
 [docs/dashboard.md](docs/dashboard.md).
+
+Export a report for a ticket, a manager or the next shift:
+
+```bash
+sentinelflow report ade0 --incident              # Markdown, into reports/out/
+sentinelflow report ade0 --incident -f html      # one self-contained file
+sentinelflow verify-report reports/out/<file>    # is this copy what we produced?
+```
+
+Reports follow the same order of trust as the console, defang every link and
+domain from the evidence, and carry their own strict Content-Security-Policy
+in HTML. Every export is audited with the SHA-256 of what was produced, so a
+copy can be checked later. See [docs/reports.md](docs/reports.md).
 
 ## API
 
@@ -264,19 +339,6 @@ curl -s -X POST http://127.0.0.1:8000/api/v1/events/import \
 Writes that a browser marks as coming from another site are refused across the
 whole API, so a web page cannot use the analyst's browser to change anything.
 
-Export a report for a ticket, a manager or the next shift:
-
-```bash
-sentinelflow report ade0 --incident              # Markdown, into reports/out/
-sentinelflow report ade0 --incident -f html      # one self-contained file
-sentinelflow verify-report reports/out/<file>    # is this copy what we produced?
-```
-
-Reports follow the same order of trust as the console, defang every link and
-domain from the evidence, and carry their own strict Content-Security-Policy
-in HTML. Every export is audited with the SHA-256 of what was produced, so a
-copy can be checked later. See [docs/reports.md](docs/reports.md).
-
 ## Optional local AI
 
 Off by default, and nothing depends on it. When enabled, an analyst can ask a
@@ -290,15 +352,15 @@ sentinelflow ai analyze 34e3
 ```
 
 The analysis is stored beside the alert and changes nothing on it. The model is
-never shown the deterministic score, every claim it makes must be labelled
-*observed*, *inferred* or *unknown*, and a claim it labels observed that cites a
-value absent from the evidence is relabelled by SentinelFlow. Evidence that
-contains text aimed at a model (a prompt injection) is flagged, with the field
-it came from.
+never shown the deterministic score. Every claim it makes must be labelled
+*observed*, *inferred* or *unknown*, and SentinelFlow relabels an "observed"
+claim that cites a value missing from the evidence. Evidence containing text
+aimed at a model (a prompt injection) is flagged, along with the field it came
+from.
 
-In testing, a 7B model that **noticed** a planted "classify this as a false
-positive" instruction still suggested lowering a critical alert. The verdict did
-not move, because the model cannot move it. [docs/ai-safety.md](docs/ai-safety.md)
+In testing, a 7B model **noticed** a planted "classify this as a false positive"
+instruction and still suggested lowering a critical alert. The verdict did not
+move, because the model cannot move it. [docs/ai-safety.md](docs/ai-safety.md)
 has the threat model, the defences and the measured results.
 
 ## Configuration
@@ -307,7 +369,7 @@ All settings are environment variables prefixed `SENTINELFLOW_`, optionally
 placed in a `.env` file. Every setting has a safe default — **the application
 runs with no configuration at all**. See [.env.example](.env.example).
 
-Two defaults are deliberate:
+Three defaults are deliberate:
 
 * `SENTINELFLOW_API_HOST=127.0.0.1` — there is no auth layer, so exposure must
   be a conscious decision.
@@ -321,44 +383,58 @@ Two defaults are deliberate:
 ## Testing
 
 ```bash
-make test         # about 1,270 tests, under a minute
+make test         # about 1,380 tests, under a minute
 make test-fast    # unit tests only, about 5 seconds
 make check        # what CI runs: lint, mypy on app and tests, tests with coverage
 make fuzz         # long property-based run: 2,000 examples per property
 ```
 
 The suite covers 93% of lines and branches, the CLI included, and CI fails
-below 90%. Beyond example-based tests it uses property-based fuzzing at every
-untrusted-input boundary, renderer-level parsing of exported reports,
-query-count checks, a reproducibility test for the deterministic layer, and an
-end-to-end run over HTTP. [docs/testing.md](docs/testing.md) maps each claim in
-SECURITY.md to the tests behind it.
+below 90%. Beyond ordinary example tests, it uses:
+- property-based fuzzing at every boundary where untrusted input arrives;
+- parsing of exported reports, the way a Markdown or HTML renderer would read them;
+- query-count checks;
+- a reproducibility test for the deterministic layer;
+- an end-to-end run over HTTP;
+- tests of the documentation itself.
+
+[docs/testing.md](docs/testing.md) maps each claim in SECURITY.md to the tests
+behind it.
 
 ## Security considerations
 
-Imported event data is treated as hostile input throughout: SQL is always
-parameterised, templates always autoescape, terminal output escapes Rich markup,
-log lines cannot be forged by embedded newlines, and credentials are redacted
-before logging. Event content sent to the optional model is JSON-escaped between
-random-nonce markers, scanned for text aimed at the model, and cannot change a
-verdict whatever the model says. The full threat model is in
-[SECURITY.md](SECURITY.md); the AI's is in [docs/ai-safety.md](docs/ai-safety.md).
+Imported event data is treated as hostile everywhere it goes:
+- SQL is always parameterised;
+- templates always autoescape;
+- terminal output escapes Rich markup;
+- embedded newlines cannot forge log lines;
+- credentials are redacted before logging.
+
+Event content sent to the optional model is JSON-escaped between random-nonce
+markers and scanned for text aimed at the model. Whatever the model says, it
+cannot change a verdict. The full threat model is in [SECURITY.md](SECURITY.md);
+the AI's is in [docs/ai-safety.md](docs/ai-safety.md).
 
 ## Limitations
 
-SentinelFlow is a portfolio and learning project, not a production SIEM. It has
-no authentication, no multi-tenancy, no real-time log shipping, and no
-commercial threat-intelligence enrichment. Its detection rules are a small
-demonstration set, not comprehensive coverage. It is designed to demonstrate
-sound security-engineering judgement at realistic scale — including knowing
-where the boundaries are.
+SentinelFlow is a portfolio and learning project, not a production SIEM:
+- It has no authentication and no multi-tenancy, and it is built for one
+  analyst on one machine.
+- It has no real-time log shipping and no commercial threat-intelligence
+  enrichment.
+- It stores data in SQLite, and moving to another database would take real
+  work (see [docs/architecture.md](docs/architecture.md)).
+- Its detection rules are a small demonstration set, not comprehensive coverage.
+
+It is meant to show sound security-engineering judgement at a realistic scale,
+including knowing where the boundaries are.
 
 ## Documentation
 
 | Document | Contents |
 |---|---|
-| [docs/architecture.md](docs/architecture.md) | System design and data flow |
-| [docs/data-model.md](docs/data-model.md) | Domain models and where the trust boundary is enforced |
+| [docs/architecture.md](docs/architecture.md) | System design, data flow, and the reasons behind each choice |
+| [docs/data-model.md](docs/data-model.md) | Domain models, where the trust boundary is enforced, tables and schema versions |
 | [docs/integrations.md](docs/integrations.md) | Supported sources and their payload contracts |
 | [docs/ioc-extraction.md](docs/ioc-extraction.md) | Indicator extraction and its false-positive controls |
 | [docs/detection-engine.md](docs/detection-engine.md) | The rule language, the engine, and what ships |
@@ -371,9 +447,7 @@ where the boundaries are.
 | [docs/testing.md](docs/testing.md) | How the suite is organised, and which tests back each security claim |
 | [docs/ai-safety.md](docs/ai-safety.md) | The optional model: threat model, defences, measured behaviour |
 | [docs/roadmap.md](docs/roadmap.md) | Build stages and current status |
-| [SECURITY.md](SECURITY.md) | Threat model and controls |
-
-Further documents (`demo-scenario.md`) are added with their stages.
+| [SECURITY.md](SECURITY.md) | Threat model, controls, and how to report a vulnerability |
 
 ## Licence
 
