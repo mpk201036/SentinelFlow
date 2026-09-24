@@ -41,6 +41,7 @@
           <th scope="col">Event time (UTC)</th>
           <th scope="col">Rules</th>
           <th scope="col">Status</th>
+          <th scope="col">Assignee</th>
         </tr>
       </thead>
       <tbody>
@@ -54,6 +55,7 @@
           <td class="mono nowrap">{{ event.timestamp|ts if event else '-' }}</td>
           <td class="mono muted">{{ alert.rule_ids|unique|join(', ') }}</td>
           <td>{{ status(alert.status.value) }}</td>
+          <td class="{{ 'muted' if not alert.assigned_to }}">{{ alert.assigned_to or '—' }}</td>
         </tr>
         {% endfor %}
       </tbody>

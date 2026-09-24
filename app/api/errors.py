@@ -21,6 +21,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from app.core.logging import get_logger
 from app.core.paths import FileTooLargeError, UnsafePathError
 from app.ingestion.adapters import UnknownAdapterError
+from app.services.workflow import RecordNotFoundError, StaleDecisionError, WorkflowError
 
 logger = get_logger(__name__)
 
@@ -64,6 +65,20 @@ def register_error_handlers(app: FastAPI) -> None:
     @app.exception_handler(FileTooLargeError)
     async def _too_large(request: Request, exc: FileTooLargeError) -> JSONResponse:
         return _json(request, status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, "too_large", str(exc))
+
+    # Workflow refusals carry messages written for the analyst, so they are
+    # returned as they are. Order matters: StaleDecisionError is a WorkflowError.
+    @app.exception_handler(StaleDecisionError)
+    async def _stale(request: Request, exc: StaleDecisionError) -> JSONResponse:
+        return _json(request, status.HTTP_409_CONFLICT, "stale_decision", str(exc))
+
+    @app.exception_handler(WorkflowError)
+    async def _refused(request: Request, exc: WorkflowError) -> JSONResponse:
+        return _json(request, status.HTTP_422_UNPROCESSABLE_CONTENT, "decision_refused", str(exc))
+
+    @app.exception_handler(RecordNotFoundError)
+    async def _missing(request: Request, exc: RecordNotFoundError) -> JSONResponse:
+        return _json(request, status.HTTP_404_NOT_FOUND, "not_found", str(exc))
 
     @app.exception_handler(StarletteHTTPException)
     async def _http(request: Request, exc: StarletteHTTPException) -> JSONResponse:

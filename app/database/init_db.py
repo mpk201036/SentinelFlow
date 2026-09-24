@@ -24,7 +24,7 @@ from sqlalchemy import Connection, Engine
 from app.core.logging import get_logger
 from app.database.base import Base
 from app.database.session import _sqlite_path, get_engine
-from app.database.tables import ALL_TABLES, SCHEMA_VERSION, SchemaVersion
+from app.database.tables import ALL_TABLES, APPEND_ONLY_TRIGGERS, SCHEMA_VERSION, SchemaVersion
 from app.models.base import utcnow
 
 logger = get_logger(__name__)
@@ -93,6 +93,34 @@ def _add_ai_system_checks(connection: Connection) -> None:
                 connection.execute(sa.text(f"ALTER TABLE {table} ADD COLUMN {name} {definition}"))
 
 
+def _lock_the_record(connection: Connection) -> None:
+    """Version 6: new audit actions, and history that cannot be rewritten.
+
+    SQLite cannot change a CHECK constraint in place, so admitting the new
+    audit actions (assignment, incident extension) means rebuilding
+    ``audit_log``: rename it, create the new table, copy every row across
+    unchanged, drop the old one. The append-only triggers are created with the
+    new table, and for ``analyst_notes``.
+    """
+    ddl = connection.execute(
+        sa.text("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'audit_log'")
+    ).scalar()
+    if ddl is not None and "'alert_assigned'" not in ddl:
+        table = Base.metadata.tables["audit_log"]
+        # Index names are global in SQLite; the old ones must go before the
+        # new table can create its own.
+        for index in table.indexes:
+            connection.execute(sa.text(f"DROP INDEX IF EXISTS {index.name}"))
+        connection.execute(sa.text("ALTER TABLE audit_log RENAME TO audit_log_v5"))
+        table.create(connection)
+        names = [column.name for column in table.columns]
+        previous = sa.table("audit_log_v5", *(sa.column(name) for name in names))
+        connection.execute(sa.insert(table).from_select(names, sa.select(*previous.columns)))
+        connection.execute(sa.text("DROP TABLE audit_log_v5"))
+    for statement in APPEND_ONLY_TRIGGERS:
+        connection.execute(sa.text(statement))
+
+
 #: Ordered migrations applied on top of the baseline.
 MIGRATIONS: tuple[Migration, ...] = (
     Migration(
@@ -114,6 +142,11 @@ MIGRATIONS: tuple[Migration, ...] = (
         version=5,
         description="add AI injection signals, grounding notes and statement downgrades",
         upgrade=_add_ai_system_checks,
+    ),
+    Migration(
+        version=6,
+        description="new audit actions; audit log and notes made append-only",
+        upgrade=_lock_the_record,
     ),
 )
 

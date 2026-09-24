@@ -14,7 +14,7 @@ from app.api import schemas
 from app.detection.schema import RuleDefinition
 from app.models.ai import AIAnalysis
 from app.models.alert import Alert, AlertSeverity
-from app.models.analyst import AnalystNote
+from app.models.analyst import AnalystNote, AuditEntry
 from app.models.detection import DetectionResult
 from app.models.event import SecurityEvent
 from app.models.incident import Incident
@@ -222,15 +222,34 @@ def incident_summary(item: Incident) -> schemas.IncidentSummary:
     )
 
 
-def incident_detail(item: Incident, *, alerts: Sequence[Alert] = ()) -> schemas.IncidentDetail:
+def incident_detail(
+    item: Incident, *, alerts: Sequence[Alert] = (), notes: Sequence[AnalystNote] = ()
+) -> schemas.IncidentDetail:
     return schemas.IncidentDetail(
         **incident_summary(item).model_dump(),
         updated_at=item.updated_at,
         classification=item.classification,
+        assigned_to=item.assigned_to,
         correlation_key=item.correlation_key,
         correlation_reasons=list(item.correlation_reasons),
         summary=item.summary,
         alerts=[alert_summary(a) for a in alerts],
+        notes=[note(n) for n in notes],
+    )
+
+
+def audit_entry(entry: AuditEntry) -> schemas.AuditEntryOut:
+    return schemas.AuditEntryOut(
+        entry_id=entry.entry_id,
+        occurred_at=entry.occurred_at,
+        actor=entry.actor.value,
+        actor_name=entry.actor_name,
+        action=entry.action.value,
+        object_type=entry.object_type,
+        object_id=entry.object_id,
+        before=entry.before,
+        after=entry.after,
+        detail=entry.detail,
     )
 
 

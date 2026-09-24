@@ -29,6 +29,9 @@ content of an ingested event**, and who wants to:
 | Exhaust the stack with nested JSON | Nesting depth is capped and `RecursionError` is caught, so a bracket bomb becomes one rejected record rather than a crash. |
 | Execute code through a rule file | Rules are parsed with `yaml.safe_load`, never `yaml.load`, whose default loader builds Python objects from `!!python/object/apply`. No rule content is ever evaluated: a rule names an operator and hands it data. |
 | Hide an event by forward-dating it | Timestamps more than 24 hours in the future are rejected, so an event cannot be pushed off the bottom of a time-sorted queue. |
+| Make the analyst's browser change something (CSRF) | Every state-changing request a browser marks as cross-site is refused, using `Sec-Fetch-Site` and falling back to `Origin`; this covers body-less endpoints such as triage and correlation, which a plain form on any site could otherwise trigger. Console forms also carry a signed double-submit token (`HttpOnly`, `SameSite=Strict` cookie; HMAC under a per-process secret). See [docs/workflow.md](docs/workflow.md). |
+| Rewrite history | SQLite triggers refuse `UPDATE` and `DELETE` on the audit log and `UPDATE` on analyst notes. Every analyst change is audited with the analyst, the channel, before and after, and the reason. |
+| Overwrite another decision unseen | Decisions carry the version the analyst saw and are applied with a compare-and-swap `UPDATE`; a stale decision is refused, never merged. |
 | Poison the verdict | The AI is advisory only. Severity, detections and MITRE mappings are produced by deterministic code and are always displayed separately from AI output. |
 
 ## What SentinelFlow deliberately does not do
@@ -41,7 +44,10 @@ content of an ingested event**, and who wants to:
 * It does not let a model decide. The model is not shown the deterministic
   score, and its suggestion is stored and displayed beside the verdict, never in
   place of it.
-* It does not auto-close, auto-escalate or auto-remediate. A human decides.
+* It does not auto-close, auto-escalate or auto-remediate. A human decides,
+  and the record says which human, when and why. That identity is the
+  configured analyst name: attribution for a single local analyst, not
+  authentication.
 * It does not silently discard input. Every imported record becomes an event
   or a rejection with a stated reason, so a gap in the data is visible rather
   than invisible.

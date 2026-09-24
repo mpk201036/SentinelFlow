@@ -155,6 +155,7 @@ class TestSummary:
             "log_level",
             "log_format",
             "log_file",
+            "analyst_name",
             "ai_enabled",
             "ai_provider",
             "ai_active",

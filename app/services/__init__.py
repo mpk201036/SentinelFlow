@@ -4,6 +4,7 @@ context     what this estate considers critical or privileged
 severity    additive, explainable scoring
 alerting    assembling alerts an analyst can queue
 pipeline    the order the stages run in
+workflow    the analyst's decisions, their rules, and their audit trail
 """
 
 from app.services.alerting import AlertBuildResult, AlertFactory, build_title, worst_severity
@@ -23,23 +24,43 @@ from app.services.severity import (
     SeverityWeights,
     describe_scale,
 )
+from app.services.workflow import (
+    UNCHANGED,
+    AlertDecision,
+    AnalystWorkflow,
+    Channel,
+    DecisionResult,
+    IncidentDecision,
+    RecordNotFoundError,
+    StaleDecisionError,
+    WorkflowError,
+)
 
 __all__ = [
     "FACTOR_NAMES",
     "REPEAT_WINDOW_HOURS",
+    "UNCHANGED",
     "AlertBuildResult",
+    "AlertDecision",
     "AlertFactory",
+    "AnalystWorkflow",
     "BusinessHours",
+    "Channel",
     "CorrelationEngine",
     "CorrelationGroup",
     "CorrelationResult",
     "CorrelationService",
+    "DecisionResult",
     "EnvironmentContext",
+    "IncidentDecision",
+    "RecordNotFoundError",
     "SeverityEngine",
     "SeverityWeights",
     "Signal",
+    "StaleDecisionError",
     "TriagePipeline",
     "TriageResult",
+    "WorkflowError",
     "build_title",
     "describe_scale",
     "get_context",

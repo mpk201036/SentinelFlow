@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "_macros.html" import severity, status %}
+{% from "_macros.html" import audit_trail, severity, status %}
 {% block title %}{{ incident.title }}{% endblock %}
 {% block content %}
 <header class="page-head rise rise-1">
@@ -61,5 +61,70 @@
     <section class="card"><p class="muted small">{{ incident.summary }}</p></section>
     {% endif %}
   </aside>
+
+  <section id="decided" class="card span-12 decided rise rise-5" aria-labelledby="decided-head">
+    <header class="card-head"><div><h2 id="decided-head">Decided</h2><p class="card-sub">Only an analyst confirms or dismisses an investigation</p></div></header>
+    {% if notice and notice[0] == "decided" %}<p class="notice" role="status">{{ notice[1] }}</p>{% endif %}
+    <div class="decided-grid">
+      <div class="stack">
+        <dl class="facts facts--compact">
+          <div><dt>State</dt><dd>{{ incident.display_label }}</dd></div>
+          <div><dt>Assigned to</dt><dd>{{ incident.assigned_to or 'Unassigned' }}</dd></div>
+        </dl>
+        <form class="decision" method="post" action="/incidents/{{ incident.incident_id }}/decision#decided" aria-labelledby="decide-head">
+          <h3 id="decide-head">Record a decision</h3>
+          {% if errors.decision %}<p class="form-error" role="alert" id="decision-error">{{ errors.decision }}</p>{% endif %}
+          <input type="hidden" name="{{ csrf_field }}" value="{{ csrf_token }}">
+          <input type="hidden" name="updated_at" value="{{ incident.updated_at.isoformat() }}">
+          <div class="field-row">
+            <label class="field">
+              <span class="label">State</span>
+              <select name="status">
+                {% for value in incident_statuses %}<option value="{{ value }}"{% if value == form.status %} selected{% endif %}>{{ 'Potential incident' if value == 'potential' else value|humanise }}</option>{% endfor %}
+              </select>
+            </label>
+            <label class="field">
+              <span class="label">Assigned to</span>
+              <input type="text" name="assigned_to" value="{{ form.assigned_to }}" maxlength="128" autocomplete="off" placeholder="Unassigned">
+            </label>
+          </div>
+          <label class="field">
+            <span class="label">Reason</span>
+            <textarea name="reason" rows="3" maxlength="1000" aria-describedby="reason-hint{% if errors.decision %} decision-error{% endif %}">{{ form.reason }}</textarea>
+            <span class="hint" id="reason-hint">Required to confirm, dismiss or reopen. The reason goes into the audit trail.</span>
+          </label>
+          <div class="form-actions">
+            <button type="submit" class="button button--primary" data-pending="Recording…">Record decision</button>
+            <span class="muted small">As {{ analyst }}</span>
+          </div>
+        </form>
+      </div>
+      <div class="stack">
+        <h3 id="notes">Notes</h3>
+        {% if notice and notice[0] == "notes" %}<p class="notice" role="status">{{ notice[1] }}</p>{% endif %}
+        {% if notes %}
+        <ol class="notes">
+          {% for note in notes %}
+          <li class="note"><p class="note-meta"><span>{{ note.author }}</span> <span class="mono muted">{{ note.created_at|ts('%Y-%m-%d %H:%M') }} UTC</span></p><p class="note-body">{{ note.body }}</p></li>
+          {% endfor %}
+        </ol>
+        {% else %}
+        <p class="quiet-state">No notes yet.</p>
+        {% endif %}
+        <form class="note-form" method="post" action="/incidents/{{ incident.incident_id }}/notes#notes" aria-label="Add a note">
+          {% if errors.note %}<p class="form-error" role="alert">{{ errors.note }}</p>{% endif %}
+          <input type="hidden" name="{{ csrf_field }}" value="{{ csrf_token }}">
+          <label class="field">
+            <span class="label">Add a note</span>
+            <textarea name="body" rows="3" maxlength="8192" required>{{ form.body }}</textarea>
+            <span class="hint">Notes cannot be edited afterwards. A correction is a new note.</span>
+          </label>
+          <div class="form-actions"><button type="submit" class="button" data-pending="Adding…">Add note</button></div>
+        </form>
+      </div>
+    </div>
+    <h3 id="history">History</h3>
+    {{ audit_trail(history) }}
+  </section>
 </div>
 {% endblock %}

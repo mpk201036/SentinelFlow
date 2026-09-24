@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block title %}Form not accepted{% endblock %}
+{% block content %}
+<header class="page-head rise rise-1">
+  <div>
+    <p class="eyebrow">Nothing was changed</p>
+    <h1>This form could not be verified</h1>
+    <p class="lede">
+      Every form in the console carries a token that proves it came from this page in this
+      browser. This one did not match, usually because the server restarted after the page
+      was opened. It can also mean another website tried to submit it on your behalf.
+    </p>
+    <p><a class="button" href="{{ back }}">Reload and try again</a></p>
+  </div>
+</header>
+{% endblock %}

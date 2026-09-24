@@ -275,6 +275,64 @@ class AnalystNoteOut(ApiModel):
 
 
 # ---------------------------------------------------------------------------
+# Analyst decisions
+# ---------------------------------------------------------------------------
+class AlertDecisionIn(BaseModel):
+    """Change an alert's status, classification or assignee. Omitted fields stay as they are.
+
+    ``assigned_to: null`` unassigns; leaving the field out leaves the assignee
+    alone. Send ``expected_updated_at`` from the alert you read, and the change
+    is refused with 409 if the alert changed in the meantime.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    status: AlertStatus | None = None
+    classification: Classification | None = None
+    assigned_to: str | None = Field(default=None, max_length=128)
+    reason: str | None = Field(
+        default=None,
+        max_length=1_000,
+        description="Required when closing, reopening or escalating. Recorded in the audit trail.",
+    )
+    expected_updated_at: datetime | None = None
+
+
+class IncidentDecisionIn(BaseModel):
+    """Change an investigation's status or assignee."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    status: IncidentStatus | None = None
+    assigned_to: str | None = Field(default=None, max_length=128)
+    reason: str | None = Field(
+        default=None,
+        max_length=1_000,
+        description="Required when confirming, dismissing or reopening.",
+    )
+    expected_updated_at: datetime | None = None
+
+
+class NoteIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    body: str = Field(min_length=1, max_length=8_192)
+
+
+class AuditEntryOut(ApiModel):
+    entry_id: UUID
+    occurred_at: datetime
+    actor: str = Field(description="system, analyst or ai_assistant.")
+    actor_name: str | None = None
+    action: str
+    object_type: str
+    object_id: UUID | None = None
+    before: str | None = None
+    after: str | None = None
+    detail: str | None = None
+
+
+# ---------------------------------------------------------------------------
 # Incidents
 # ---------------------------------------------------------------------------
 class IncidentSummary(ApiModel):
@@ -294,10 +352,22 @@ class IncidentSummary(ApiModel):
 class IncidentDetail(IncidentSummary):
     updated_at: datetime
     classification: Classification | None = None
+    assigned_to: str | None = None
     correlation_key: str
     correlation_reasons: list[str] = Field(default_factory=list)
     summary: str | None = None
     alerts: list[AlertSummary] = Field(default_factory=list)
+    notes: list[AnalystNoteOut] = Field(default_factory=list)
+
+
+class AlertDecisionOut(ApiModel):
+    changes: list[str] = Field(description="What changed, in words. Empty when nothing did.")
+    alert: AlertDetail
+
+
+class IncidentDecisionOut(ApiModel):
+    changes: list[str]
+    incident: IncidentDetail
 
 
 # ---------------------------------------------------------------------------

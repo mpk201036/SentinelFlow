@@ -32,7 +32,14 @@ from app.enrichment import EnrichmentService
 from app.ingestion import IngestionService, generate_dataset, group_by_adapter, list_adapters
 from app.ingestion.service import IngestionOutcome
 from app.mitre import MitreMapper, load_catalogue, tactic_coverage, validate_rule_techniques
-from app.models.enums import Actor, AlertStatus, IncidentStatus, IndicatorType, Severity
+from app.models.enums import (
+    Actor,
+    AlertStatus,
+    Classification,
+    IncidentStatus,
+    IndicatorType,
+    Severity,
+)
 from app.models.ingestion import IngestionReport
 from app.services import CorrelationService, TriagePipeline
 
@@ -1319,6 +1326,172 @@ def serve(
         factory=True,
         log_level=settings.log_level.lower(),
     )
+
+
+# ---------------------------------------------------------------------------
+# Analyst workflow
+# ---------------------------------------------------------------------------
+def _resolve_record(session: Any, prefix: str, *, incident: bool) -> Any:
+    """The alert (or, with --incident, the investigation) that ``prefix`` names."""
+    from app.database import repository
+
+    if not incident:
+        return _resolve_alert(session, prefix)
+    matches = repository.find_incident_ids_by_prefix(session, prefix)
+    found = repository.get_incident(session, matches[0]) if len(matches) == 1 else None
+    if found is None:
+        console.print(f"[red]{_prefix_problem('incident', prefix, len(matches))}[/red]")
+        raise typer.Exit(code=1)
+    return found
+
+
+def _clip(text: str, limit: int) -> str:
+    return text if len(text) <= limit else text[: limit - 3] + "..."
+
+
+def _choice(enum_class: Any, value: str | None, what: str) -> Any:
+    if value is None:
+        return None
+    try:
+        return enum_class(value.strip().lower())
+    except ValueError:
+        allowed = ", ".join(member.value for member in enum_class)
+        console.print(f"[red]Unknown {what} {_u(value)!r}.[/red] Choose from: {allowed}")
+        raise typer.Exit(code=1) from None
+
+
+@app.command()
+def decide(
+    record_id: str = typer.Argument(..., help="Alert id prefix (an incident's with --incident)."),
+    status: str | None = typer.Option(None, "--status", "-s", help="New status."),
+    classification: str | None = typer.Option(
+        None, "--classification", "-c", help="true_positive, false_positive, benign_positive..."
+    ),
+    assign: str | None = typer.Option(
+        None, "--assign", "-a", help="Assign to an analyst; 'me' means you."
+    ),
+    unassign: bool = typer.Option(False, "--unassign", help="Remove the assignee."),
+    reason: str | None = typer.Option(
+        None, "--reason", "-r", help="Required to close, reopen or escalate."
+    ),
+    incident: bool = typer.Option(False, "--incident", "-i", help="Decide on an investigation."),
+) -> None:
+    """Record a decision: status, classification, assignee. Every change is audited."""
+    from app.services.workflow import (
+        UNCHANGED,
+        AlertDecision,
+        AnalystWorkflow,
+        Channel,
+        IncidentDecision,
+        WorkflowError,
+    )
+
+    settings = get_settings()
+    if assign and unassign:
+        console.print("[red]Use --assign or --unassign, not both.[/red]")
+        raise typer.Exit(code=1)
+    assignee: Any = UNCHANGED
+    if unassign:
+        assignee = None
+    elif assign:
+        assignee = settings.analyst_name if assign.strip().lower() == "me" else assign
+
+    with session_scope(settings) as session:
+        record = _resolve_record(session, record_id, incident=incident)
+        workflow = AnalystWorkflow(session, analyst=settings.analyst_name, channel=Channel.CLI)
+        try:
+            if incident:
+                result = workflow.decide_incident(
+                    record.incident_id,
+                    IncidentDecision(
+                        status=_choice(IncidentStatus, status, "status"),
+                        assigned_to=assignee,
+                        reason=reason,
+                    ),
+                )
+            else:
+                wanted_class = _choice(Classification, classification, "classification")
+                result = workflow.decide_alert(
+                    record.alert_id,
+                    AlertDecision(
+                        status=_choice(AlertStatus, status, "status"),
+                        classification=wanted_class,
+                        assigned_to=assignee,
+                        reason=reason,
+                    ),
+                )
+        except WorkflowError as exc:
+            console.print(f"[red]Not recorded:[/red] {_u(exc)}")
+            raise typer.Exit(code=1) from None
+
+    if not result.changed:
+        console.print("[yellow]Nothing changed.[/yellow] That is already what is recorded.")
+        return
+    for change in result.changes:
+        console.print(f"  [green]{_u(change)}[/green]")
+    console.print(f"[dim]Recorded as {_u(settings.analyst_name)}, via the CLI.[/dim]")
+
+
+@app.command()
+def note(
+    record_id: str = typer.Argument(..., help="Alert id prefix (an incident's with --incident)."),
+    text: str = typer.Argument(..., help="The note. Notes cannot be edited afterwards."),
+    incident: bool = typer.Option(False, "--incident", "-i", help="Note an investigation."),
+) -> None:
+    """Add a note to an alert or an investigation."""
+    from app.services.workflow import AnalystWorkflow, Channel, WorkflowError
+
+    settings = get_settings()
+    with session_scope(settings) as session:
+        record = _resolve_record(session, record_id, incident=incident)
+        workflow = AnalystWorkflow(session, analyst=settings.analyst_name, channel=Channel.CLI)
+        try:
+            if incident:
+                workflow.add_incident_note(record.incident_id, text)
+            else:
+                workflow.add_alert_note(record.alert_id, text)
+        except WorkflowError as exc:
+            console.print(f"[red]Not recorded:[/red] {_u(exc)}")
+            raise typer.Exit(code=1) from None
+    console.print(f"[green]Note added[/green] [dim]as {_u(settings.analyst_name)}.[/dim]")
+
+
+@app.command()
+def history(
+    record_id: str = typer.Argument(..., help="Alert id prefix (an incident's with --incident)."),
+    incident: bool = typer.Option(False, "--incident", "-i", help="An investigation's history."),
+) -> None:
+    """Everything that happened to an alert or an investigation, oldest first."""
+    from app.database import repository
+    from app.web.formatting import audit_change, audit_label
+
+    settings = get_settings()
+    with session_scope(settings) as session:
+        record = _resolve_record(session, record_id, incident=incident)
+        object_id = record.incident_id if incident else record.alert_id
+        entries = repository.list_audit(session, object_id=object_id, limit=500, oldest_first=True)
+
+    console.print(f"\n[bold]{_u(record.title)}[/bold]")
+    table = Table(header_style="bold", box=None, pad_edge=False)
+    table.add_column("When (UTC)", style="dim", no_wrap=True)
+    table.add_column("Who", no_wrap=True)
+    table.add_column("What", no_wrap=True)
+    table.add_column("Change")
+    table.add_column("Detail", style="dim", ratio=1)
+    names = {"system": "SentinelFlow", "ai_assistant": "AI assistant"}
+    for entry in entries:
+        who = entry.actor_name if entry.actor.value == "analyst" else names[entry.actor.value]
+        shown = audit_change(entry)
+        change = f"{shown[0]} -> {shown[1]}" if shown else ""
+        table.add_row(
+            entry.occurred_at.strftime("%Y-%m-%d %H:%M:%S"),
+            _u(who or "analyst"),
+            audit_label(entry.action.value),
+            _u(change),
+            _u(_clip(entry.detail or "", 90)),
+        )
+    console.print(table)
+    console.print(f"[dim]{len(entries)} entries. The audit log is append-only.[/dim]\n")
 
 
 # ---------------------------------------------------------------------------

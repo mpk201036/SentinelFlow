@@ -179,3 +179,14 @@ at render time — doing it twice would corrupt the evidence), or strip
 suspicious-looking text such as prompt-injection phrases (evidence is preserved
 verbatim; neutralising injection is the AI boundary's job, by delimiting
 untrusted text rather than editing it).
+
+## History that cannot be rewritten
+
+`AnalystNote` and `AuditEntry` are frozen in Python, and since schema version 6
+the database agrees: SQLite triggers refuse any `UPDATE` or `DELETE` on
+`audit_log` and any `UPDATE` on `analyst_notes`. An alert's workflow fields -
+status, classification, assignee - are the only mutable part of it, and they
+change only through `AnalystWorkflow`, which applies each change with a
+compare-and-swap on `updated_at` and writes an audit entry for it. See
+[workflow.md](workflow.md).
+

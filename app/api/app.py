@@ -10,7 +10,6 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
-from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import sessionmaker
 
 from app import __version__
@@ -18,11 +17,10 @@ from app.ai.providers import ProviderConfigurationError, build_provider
 from app.api.dependencies import AIState
 from app.api.errors import register_error_handlers
 from app.api.middleware import install_middleware
-from app.api.routes import ai, alerts, events, incidents, operations, rules
+from app.api.routes import ai, alerts, audit, events, incidents, operations, rules
 from app.core.config import Settings, get_settings
 from app.database.session import create_db_engine
-from app.web import STATIC_DIR
-from app.web import router as console_router
+from app.web import install_console
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -73,10 +71,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(incidents.router, prefix="/api/v1")
     app.include_router(rules.router, prefix="/api/v1")
     app.include_router(ai.router, prefix="/api/v1")
+    app.include_router(audit.router, prefix="/api/v1")
 
     # The analyst console: same process, same pipeline, same security headers.
-    app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
-    app.include_router(console_router)
+    install_console(app)
 
     return app
 

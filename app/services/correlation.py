@@ -44,7 +44,8 @@ from app.core.config import Settings, get_settings
 from app.core.logging import get_logger
 from app.database import repository
 from app.models.alert import Alert
-from app.models.enums import IncidentStatus, Severity
+from app.models.analyst import AuditEntry
+from app.models.enums import Actor, AuditAction, IncidentStatus, Severity
 from app.models.event import SecurityEvent
 from app.models.incident import Incident
 
@@ -440,6 +441,12 @@ class CorrelationService:
         if not existing_ids:
             repository.save_incident(self.session, incident)
             result.created.append(incident)
+            self._audit(
+                AuditAction.INCIDENT_CREATED,
+                incident.incident_id,
+                f"{incident.alert_count} alerts, key {incident.correlation_key}",
+                incident.correlation_reasons,
+            )
             return
 
         # Attach to the oldest existing incident. Alerts already belonging to a
@@ -454,3 +461,25 @@ class CorrelationService:
         merged = incident.model_copy(update={"incident_id": target})
         repository.upsert_incident(self.session, merged)
         result.extended.append(merged)
+        self._audit(
+            AuditAction.INCIDENT_EXTENDED,
+            target,
+            f"{merged.alert_count} alerts, key {merged.correlation_key}",
+            merged.correlation_reasons,
+        )
+
+    def _audit(
+        self, action: AuditAction, incident_id: UUID, after: str, reasons: list[str]
+    ) -> None:
+        """Record what correlation did. An analyst's own changes are audited by the workflow."""
+        repository.record_audit(
+            self.session,
+            AuditEntry(
+                actor=Actor.SYSTEM,
+                action=action,
+                object_type="incident",
+                object_id=incident_id,
+                after=after[:512],
+                detail="; ".join(reasons)[:1_024] or None,
+            ),
+        )

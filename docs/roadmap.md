@@ -31,7 +31,7 @@ Legend: **Done** · *In progress* · Planned
 | 10 | FastAPI REST API | **Done** |
 | 11 | SOC dashboard (overview + alert detail) | **Done** |
 | 12 | Optional Ollama AI provider with injection defences | **Done** |
-| 13 | Analyst workflow: status, classification, notes, audit | Planned |
+| 13 | Analyst workflow: status, classification, notes, audit | **Done** |
 | 14 | Investigation report generation (Markdown / HTML) | Planned |
 
 ## Milestone 4 — Hardening and portfolio
@@ -321,4 +321,61 @@ Each has a regression test that was confirmed to fail with the fix removed.
   never act as LIKE wildcards.
 * **`python -m app.cli` ran before most commands were registered**, because the
   `__main__` guard sat in the middle of the module.
+
+## Stage 13 - delivered
+
+* `app/services/workflow.py` - one `AnalystWorkflow` behind the console, the API
+  and the CLI, so every rule lives in one place:
+  * closing needs a classification that fits the outcome, and a reason
+  * reopening, escalating, confirming and dismissing need a reason
+  * nothing goes back to *new* or *potential*
+  * a decision against an out-of-date view is refused (compare-and-swap on
+    `updated_at` in the `UPDATE` itself), never merged
+  * a decision that changes nothing records nothing
+* An audit entry for every change: analyst, channel, before, after, reason.
+  Correlation now audits `incident_created` and `incident_extended`
+* Schema version 6: new audit actions (`alert_assigned`, `incident_assigned`,
+  `incident_extended`) by rebuilding `audit_log` with every row kept, the first
+  migration that needs a table rebuild; SQLite triggers make the audit log
+  append-only and notes uneditable
+* Console: "Take it", a decision form, notes and a history on every alert and
+  investigation; "Ask the local model" from the alert page; an assignee column
+  in the queue. Refusals come back beside the form with the analyst's input
+  kept; successes use Post/Redirect/Get
+* API: `PATCH /alerts/{id}`, `PATCH /incidents/{id}`, notes, per-record audit
+  and `GET /api/v1/audit`
+* CLI: `decide`, `note`, `history`, with `--incident` and `--assign me`
+* `SENTINELFLOW_ANALYST_NAME`, recorded on every decision. It is attribution
+  for a single local analyst, not authentication, and the docs say so
+* Two layers against cross-site requests: a guard that refuses browser writes
+  marked cross-site across the whole app (using `Sec-Fetch-Site`, then
+  `Origin`), and signed double-submit CSRF tokens on every console form
+* `docs/workflow.md`
+* 89 new tests (1,114 in all). The interface tests send the headers a real
+  browser sends
+
+### Defects found while building Stage 13
+
+Each has a regression test that was confirmed to fail with the fix removed.
+
+* **The cross-site guard refused the console's own forms.** It passed every
+  test, because the test client sends no browser headers, and failed on the
+  first click in a real browser: `Referrer-Policy: no-referrer` makes browsers
+  send `Origin: null` on same-origin form posts. `Sec-Fetch-Site` now decides
+  when present, and the policy is `same-origin`, which still sends nothing to
+  other sites.
+* **Body-less API writes were open to cross-site requests.** `POST
+  /api/v1/triage`, `/correlate` and `/ai-analysis` take no body, so a plain
+  HTML form on any site could trigger them from the analyst's browser. The
+  guard closes this for every write.
+* **Reopening an alert kept its closing time.** `update_alert_status` stamped
+  `closed_at` on close but never cleared it on reopen.
+* **A quoted file path kept its closing quote.** `'C:\x\y.exe'` in a log message
+  was extracted as `C:\x\y.exe'`, so it never matched the same path elsewhere:
+  a wrong indicator in enrichment, and a false "not in the evidence" relabel in
+  AI grounding, which is where a live `qwen2.5:7b` run exposed it.
+* **Correlation left no trace in the audit trail** when it created or extended
+  an investigation, although the action existed.
+* **The audit log was append-only only by convention.** It is now enforced by
+  the database.
 

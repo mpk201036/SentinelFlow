@@ -5,12 +5,14 @@ from __future__ import annotations
 from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, status
+from sqlalchemy.orm import Session
 
 from app.ai.service import AIAnalysisService, AlertNotFoundError, OutcomeKind
 from app.api import converters, schemas
-from app.api.dependencies import AIDep, PageDep, SessionDep
+from app.api.dependencies import AIDep, PageDep, SessionDep, SettingsDep
 from app.database import repository
 from app.models.enums import AlertStatus, Severity
+from app.services.workflow import UNCHANGED, AlertDecision, AnalystWorkflow, Channel
 
 router = APIRouter(prefix="/alerts", tags=["alerts"])
 
@@ -45,6 +47,10 @@ def list_alerts(
 
 @router.get("/{alert_id}", response_model=schemas.AlertDetail)
 def get_alert(alert_id: UUID, session: SessionDep) -> schemas.AlertDetail:
+    return _detail(session, alert_id)
+
+
+def _detail(session: Session, alert_id: UUID) -> schemas.AlertDetail:
     alert = repository.get_alert(session, alert_id)
     if alert is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="alert not found")
@@ -54,6 +60,60 @@ def get_alert(alert_id: UUID, session: SessionDep) -> schemas.AlertDetail:
     notes = repository.list_notes(session, alert_id=alert_id)
     analyses = repository.get_ai_analyses(session, alert_id)
     return converters.alert_detail(alert, event=event, notes=notes, analyses=analyses)
+
+
+@router.patch(
+    "/{alert_id}",
+    response_model=schemas.AlertDecisionOut,
+    responses={
+        404: {"description": "No such alert."},
+        409: {"description": "The alert changed after `expected_updated_at`."},
+        422: {"description": "The decision breaks a workflow rule; the detail says which."},
+    },
+)
+def decide_alert(
+    alert_id: UUID, body: schemas.AlertDecisionIn, session: SessionDep, settings: SettingsDep
+) -> schemas.AlertDecisionOut:
+    """Record an analyst decision: status, classification, assignee.
+
+    Closing requires a classification and a reason; reopening and escalating
+    require a reason. Each change is audited with the configured analyst name.
+    """
+    decision = AlertDecision(
+        status=body.status,
+        classification=body.classification,
+        assigned_to=body.assigned_to if "assigned_to" in body.model_fields_set else UNCHANGED,
+        reason=body.reason,
+        expected_updated_at=body.expected_updated_at,
+    )
+    result = _workflow(session, settings.analyst_name).decide_alert(alert_id, decision)
+    return schemas.AlertDecisionOut(changes=result.changes, alert=_detail(session, alert_id))
+
+
+@router.post(
+    "/{alert_id}/notes",
+    response_model=schemas.AnalystNoteOut,
+    status_code=status.HTTP_201_CREATED,
+)
+def add_alert_note(
+    alert_id: UUID, body: schemas.NoteIn, session: SessionDep, settings: SettingsDep
+) -> schemas.AnalystNoteOut:
+    """Add a note. Notes cannot be edited; a correction is a new note."""
+    note = _workflow(session, settings.analyst_name).add_alert_note(alert_id, body.body)
+    return converters.note(note)
+
+
+@router.get("/{alert_id}/audit", response_model=list[schemas.AuditEntryOut])
+def alert_audit(alert_id: UUID, session: SessionDep) -> list[schemas.AuditEntryOut]:
+    """Everything that happened to this alert, oldest first."""
+    if repository.get_alert(session, alert_id) is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="alert not found")
+    entries = repository.list_audit(session, object_id=alert_id, limit=500, oldest_first=True)
+    return [converters.audit_entry(e) for e in entries]
+
+
+def _workflow(session: Session, analyst: str) -> AnalystWorkflow:
+    return AnalystWorkflow(session, analyst=analyst, channel=Channel.API)
 
 
 @router.post(

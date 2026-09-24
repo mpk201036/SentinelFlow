@@ -13,6 +13,7 @@ clearly set apart - the model's suggestion, then the analyst's own decision.
 
 from __future__ import annotations
 
+import re
 from typing import Any
 from uuid import UUID
 
@@ -25,9 +26,9 @@ from app.api.dependencies import CatalogueDep, RulesDep, SessionDep, SettingsDep
 from app.core.config import PROJECT_ROOT
 from app.database import repository
 from app.models.ai import AIAnalysis
-from app.models.enums import AlertStatus, IncidentStatus, Severity
+from app.models.enums import AlertStatus, Classification, IncidentStatus, Severity
 from app.services.dashboard import RANGES, SEVERITY_ORDER, collect_dashboard_stats
-from app.web import charts
+from app.web import charts, csrf
 from app.web.formatting import FILTERS
 
 TEMPLATE_DIR = PROJECT_ROOT / "dashboard" / "templates"
@@ -50,6 +51,20 @@ NAV = (
 )
 
 
+#: Confirmations shown after a successful form, keyed by a fixed code in the
+#: redirect URL. The URL carries the code, never the message, so nothing a
+#: link supplies is ever printed on the page.
+NOTICES = {
+    "decision": ("decided", "Decision recorded."),
+    "unchanged": ("decided", "Nothing changed: the form matched what was already recorded."),
+    "note": ("notes", "Note added."),
+    "analysis": (
+        "suggested",
+        "The model's analysis was stored. It is advisory and changed nothing above.",
+    ),
+}
+
+
 def _render(
     request: Request,
     template: str,
@@ -59,7 +74,8 @@ def _render(
     status_code: int = 200,
     **context: Any,
 ) -> Response:
-    return templates.TemplateResponse(
+    token, issued = csrf.form_token(request)
+    response = templates.TemplateResponse(
         request,
         template,
         {
@@ -67,11 +83,17 @@ def _render(
             "active": active,
             "version": __version__,
             "ai_enabled": settings.ai_active,
+            "analyst": settings.analyst_name,
+            "csrf_field": csrf.FIELD_NAME,
+            "csrf_token": token,
             "severity_order": [s.value for s in SEVERITY_ORDER],
             **context,
         },
         status_code=status_code,
     )
+    if issued is not None:
+        csrf.set_cookie(response, issued, secure=settings.api_is_exposed)
+    return response
 
 
 def _not_found(request: Request, settings: Any, what: str) -> Response:
@@ -82,6 +104,22 @@ def _not_found(request: Request, settings: Any, what: str) -> Response:
         settings=settings,
         status_code=404,
         what=what,
+    )
+
+
+_FORM_PARENT_RE = re.compile(r"^(/(?:alerts|incidents)/[0-9a-f-]{36})/[a-z-]+$")
+
+
+def form_rejected(request: Request) -> Response:
+    """The page shown when a form's CSRF token does not check out. Nothing changed."""
+    match = _FORM_PARENT_RE.match(request.url.path)
+    return _render(
+        request,
+        "form_rejected.html",
+        active="",
+        settings=request.app.state.settings,
+        status_code=403,
+        back=match.group(1) if match else "/",
     )
 
 
@@ -168,9 +206,26 @@ def alert_detail(
     alert_id: str,
     session: SessionDep,
     settings: SettingsDep,
+    saved: str | None = Query(None, max_length=16),
 ) -> Response:
-    parsed = _parse_uuid(alert_id)
-    alert = repository.get_alert(session, parsed) if parsed else None
+    return alert_page(
+        request, session, settings, _parse_uuid(alert_id), notice=NOTICES.get(saved or "")
+    )
+
+
+def alert_page(
+    request: Request,
+    session: Any,
+    settings: Any,
+    alert_id: UUID | None,
+    *,
+    notice: tuple[str, str] | None = None,
+    errors: dict[str, str] | None = None,
+    values: dict[str, str] | None = None,
+    status_code: int = 200,
+) -> Response:
+    """The alert page. Also re-rendered, with the analyst's input, when a form is refused."""
+    alert = repository.get_alert(session, alert_id) if alert_id else None
     if alert is None:
         return _not_found(request, settings, "alert")
 
@@ -197,7 +252,24 @@ def alert_detail(
         analyses=repository.get_ai_analyses(session, alert.alert_id),
         ai_disclaimer=AIAnalysis.DISCLAIMER,
         ai_problem=request.app.state.ai.problem,
+        ai_ready=request.app.state.ai.provider is not None,
         recommendations=recommendations,
+        history=repository.list_audit(session, object_id=alert.alert_id, limit=200),
+        alert_statuses=[
+            s.value for s in AlertStatus if s is not AlertStatus.NEW or alert.status is s
+        ],
+        classifications=[c.value for c in Classification],
+        form={
+            "status": alert.status.value,
+            "classification": alert.classification.value if alert.classification else "",
+            "assigned_to": alert.assigned_to or "",
+            "reason": "",
+            "body": "",
+            **(values or {}),
+        },
+        errors=errors or {},
+        notice=notice,
+        status_code=status_code,
     )
 
 
@@ -223,9 +295,25 @@ def incident_detail(
     incident_id: str,
     session: SessionDep,
     settings: SettingsDep,
+    saved: str | None = Query(None, max_length=16),
 ) -> Response:
-    parsed = _parse_uuid(incident_id)
-    incident = repository.get_incident(session, parsed) if parsed else None
+    return incident_page(
+        request, session, settings, _parse_uuid(incident_id), notice=NOTICES.get(saved or "")
+    )
+
+
+def incident_page(
+    request: Request,
+    session: Any,
+    settings: Any,
+    incident_id: UUID | None,
+    *,
+    notice: tuple[str, str] | None = None,
+    errors: dict[str, str] | None = None,
+    values: dict[str, str] | None = None,
+    status_code: int = 200,
+) -> Response:
+    incident = repository.get_incident(session, incident_id) if incident_id else None
     if incident is None:
         return _not_found(request, settings, "investigation")
 
@@ -251,6 +339,23 @@ def incident_detail(
         timeline=timeline,
         techniques=sorted(techniques.values(), key=lambda t: t.technique_id),
         potential=incident.status is IncidentStatus.POTENTIAL,
+        notes=repository.list_notes(session, incident_id=incident.incident_id),
+        history=repository.list_audit(session, object_id=incident.incident_id, limit=200),
+        incident_statuses=[
+            s.value
+            for s in IncidentStatus
+            if s is not IncidentStatus.POTENTIAL or incident.status is s
+        ],
+        form={
+            "status": incident.status.value,
+            "assigned_to": incident.assigned_to or "",
+            "reason": "",
+            "body": "",
+            **(values or {}),
+        },
+        errors=errors or {},
+        notice=notice,
+        status_code=status_code,
     )
 
 

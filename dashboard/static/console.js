@@ -1,8 +1,9 @@
 /*
  * SentinelFlow console - the only script any page loads.
  *
- * It does one thing: shows a tooltip for elements carrying data-tip. The CSP
- * forbids inline script, so behaviour lives here or nowhere.
+ * It does two things: shows a tooltip for elements carrying data-tip, and
+ * gives form buttons a pending state. The CSP forbids inline script, so
+ * behaviour lives here or nowhere. Every form works without it.
  *
  * Tooltip content comes from data attributes that may contain attacker-
  * controlled text (a hostname, a rule's observed value). It is therefore
@@ -104,5 +105,42 @@
       if (event.key === "Escape") hide();
     });
     window.addEventListener("scroll", hide, { passive: true });
+  });
+
+  /*
+   * Pending state for forms. A button with data-pending is disabled and
+   * relabelled once its form is submitted, so a slow request (asking the
+   * local model can take a minute) cannot be sent twice, and the analyst can
+   * see it is in progress. The label comes from our own markup, set with
+   * textContent.
+   */
+  document.addEventListener("submit", function (event) {
+    var form = event.target;
+    if (form.getAttribute("aria-busy") === "true") {
+      event.preventDefault();
+      return;
+    }
+    form.setAttribute("aria-busy", "true");
+    var button = form.querySelector("button[data-pending]");
+    if (!button) return;
+    button.setAttribute("data-label", button.textContent);
+    // Deferred so the submission is already under way when the button goes.
+    window.setTimeout(function () {
+      button.disabled = true;
+      button.textContent = button.getAttribute("data-pending");
+    }, 0);
+  });
+
+  // Coming back to a page from the history cache must not leave it frozen.
+  window.addEventListener("pageshow", function () {
+    var busy = document.querySelectorAll("form[aria-busy='true']");
+    Array.prototype.forEach.call(busy, function (form) {
+      form.removeAttribute("aria-busy");
+      var button = form.querySelector("button[data-label]");
+      if (button) {
+        button.disabled = false;
+        button.textContent = button.getAttribute("data-label");
+      }
+    });
   });
 })();

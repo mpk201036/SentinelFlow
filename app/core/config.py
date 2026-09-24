@@ -74,6 +74,18 @@ def is_loopback_host(host: str) -> bool:
         return False
 
 
+def _default_analyst() -> str:
+    """The local account name, as a sensible default for a single-analyst tool."""
+    import getpass
+
+    try:
+        name = getpass.getuser()
+    except Exception:  # no login name in some containers
+        return "analyst"
+    cleaned = "".join(ch for ch in name if ch.isprintable()).strip()[:64]
+    return cleaned or "analyst"
+
+
 def _resolve(path: str | Path) -> Path:
     """Resolve a possibly-relative path against the project root."""
     candidate = Path(path).expanduser()
@@ -140,6 +152,16 @@ class Settings(BaseSettings):
     correlation_window_minutes: Annotated[int, Field(ge=1, le=1_440)] = 30
 
     # ------------------------------------------------------------------
+    # Analyst identity
+    # ------------------------------------------------------------------
+    #: Recorded as the author of every decision, note and audit entry an
+    #: analyst makes. SentinelFlow has no authentication, so this is
+    #: attribution for a single local analyst, not proof of identity.
+    analyst_name: Annotated[str, Field(min_length=1, max_length=64)] = Field(
+        default_factory=_default_analyst
+    )
+
+    # ------------------------------------------------------------------
     # Optional AI (advisory only, never authoritative)
     # ------------------------------------------------------------------
     ai_enabled: bool = False
@@ -177,6 +199,14 @@ class Settings(BaseSettings):
         if raw in ("", ":memory:"):
             return value
         return f"sqlite:///{_resolve(raw)}"
+
+    @field_validator("analyst_name", mode="before")
+    @classmethod
+    def _clean_analyst_name(cls, value: Any) -> str:
+        text = "".join(ch for ch in str(value) if ch.isprintable()).strip()
+        if not text:
+            raise ValueError("analyst_name cannot be blank")
+        return text
 
     @field_validator("ollama_base_url", mode="after")
     @classmethod
@@ -305,6 +335,7 @@ class Settings(BaseSettings):
             "log_level": self.log_level,
             "log_format": self.log_format.value,
             "log_file": str(self.log_file) if self.log_file else None,
+            "analyst_name": self.analyst_name,
             "ai_enabled": self.ai_enabled,
             "ai_provider": self.ai_provider.value,
             "ai_active": self.ai_active,

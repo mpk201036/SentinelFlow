@@ -61,3 +61,26 @@
 </details>
 {%- endif -%}
 {%- endmacro %}
+
+{% macro audit_trail(entries) -%}
+{#- The audit trail, newest first. Every entry names who acted: an analyst by
+    name, SentinelFlow itself, or the AI assistant - never a blank. -#}
+{%- if entries -%}
+<ol class="history">
+  {% for entry in entries %}
+  <li class="history-item history-item--{{ entry.actor.value }}">
+    <p class="history-head">
+      <span class="history-actor">{% if entry.actor.value == 'system' %}SentinelFlow{% elif entry.actor.value == 'ai_assistant' %}AI assistant{% else %}{{ entry.actor_name or 'Analyst' }}{% endif %}</span>
+      <span class="history-action">{{ entry.action.value|audit_label }}</span>
+      {% set change = entry|audit_change %}
+      {% if change %}<span class="history-change">{{ change[0] }} → {{ change[1] }}</span>{% elif entry.action.value == 'alert_created' and entry.after %}<span class="history-change">{{ entry.after }}</span>{% endif %}
+      <time class="history-time mono muted" datetime="{{ entry.occurred_at.isoformat() }}">{{ entry.occurred_at|ts('%Y-%m-%d %H:%M:%S') }} UTC</time>
+    </p>
+    {% if entry.detail %}<p class="history-detail">{{ entry.detail }}</p>{% endif %}
+  </li>
+  {% endfor %}
+</ol>
+{%- else -%}
+<p class="quiet-state">Nothing recorded yet.</p>
+{%- endif -%}
+{%- endmacro %}

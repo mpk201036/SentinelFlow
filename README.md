@@ -185,6 +185,21 @@ sentinelflow incidents                  # investigations
 sentinelflow incident ade0              # one investigation, with its timeline
 ```
 
+Decide, and keep a record:
+
+```bash
+sentinelflow decide 20ea --status investigating --assign me
+sentinelflow decide 20ea -s closed -c false_positive -r "Scheduled admin script, ticket 4411"
+sentinelflow note 20ea "Owner confirmed with the helpdesk."
+sentinelflow history 20ea               # every change, who made it and why
+sentinelflow decide ade0 --incident -s confirmed -r "Decoy credential used from the same host"
+```
+
+Closing needs a classification and a reason; reopening and escalating need a
+reason; a decision against an out-of-date view is refused rather than merged.
+Every change is audited, and the audit log is append-only in the database
+itself. See [docs/workflow.md](docs/workflow.md).
+
 Run the analyst console and the REST API (one process, one port):
 
 ```bash
@@ -213,6 +228,9 @@ is true (the default for local use).
 | `GET` | `/api/v1/alerts`, `/api/v1/alerts/{id}` | Alerts, with severity factors |
 | `GET` | `/api/v1/incidents`, `/api/v1/incidents/{id}` | Investigations |
 | `GET` | `/api/v1/rules`, `/api/v1/rules/{id}` | Detection rules |
+| `PATCH` | `/api/v1/alerts/{id}`, `/api/v1/incidents/{id}` | An analyst decision: status, classification, assignee, reason |
+| `POST` | `/api/v1/alerts/{id}/notes`, `/api/v1/incidents/{id}/notes` | Add a note (notes cannot be edited) |
+| `GET` | `/api/v1/alerts/{id}/audit`, `/api/v1/incidents/{id}/audit`, `/api/v1/audit` | The audit trail |
 | `GET` | `/api/v1/ai/status` | Whether a local model can be asked, and if not, why |
 | `POST` | `/api/v1/alerts/{id}/ai-analysis` | Request an advisory analysis (`503` while AI is off) |
 
@@ -242,6 +260,8 @@ curl -s -X POST http://127.0.0.1:8000/api/v1/events/import \
 
 `sentinelflow serve` refuses to listen on anything but loopback unless you pass
 `--expose`: there is no authentication, so exposing it must be a decision.
+Writes that a browser marks as coming from another site are refused across the
+whole API, so a web page cannot use the analyst's browser to change anything.
 
 Report generation (`report`) arrives with Stage 14.
 
@@ -279,6 +299,8 @@ Two defaults are deliberate:
 
 * `SENTINELFLOW_API_HOST=127.0.0.1` — there is no auth layer, so exposure must
   be a conscious decision.
+* `SENTINELFLOW_ANALYST_NAME` — the name recorded on every decision. It
+  defaults to your account name and is attribution, not authentication.
 * `SENTINELFLOW_AI_ENABLED=false` — the deterministic pipeline is complete
   without a model, and nothing contacts the network in this state. When it is
   enabled, a provider that is not on this machine is refused unless
@@ -324,6 +346,7 @@ where the boundaries are.
 | [docs/severity.md](docs/severity.md) | The scoring factors and why the AI cannot reach them |
 | [docs/correlation.md](docs/correlation.md) | What links alerts, what deliberately does not |
 | [docs/dashboard.md](docs/dashboard.md) | The console's design, and how the CSP shaped it |
+| [docs/workflow.md](docs/workflow.md) | Analyst decisions, their rules, the audit trail, CSRF defences |
 | [docs/ai-safety.md](docs/ai-safety.md) | The optional model: threat model, defences, measured behaviour |
 | [docs/roadmap.md](docs/roadmap.md) | Build stages and current status |
 | [SECURITY.md](SECURITY.md) | Threat model and controls |

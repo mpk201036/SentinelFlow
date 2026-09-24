@@ -46,7 +46,7 @@ from app.models.ingestion import RejectionReason
 # ---------------------------------------------------------------------------
 # Schema versioning
 # ---------------------------------------------------------------------------
-SCHEMA_VERSION = 5
+SCHEMA_VERSION = 6
 
 
 class SchemaVersion(Base):
@@ -615,6 +615,27 @@ class AuditLogRow(Base):
     before: Mapped[str | None] = mapped_column(sa.String(512))
     after: Mapped[str | None] = mapped_column(sa.String(512))
     detail: Mapped[str | None] = mapped_column(sa.Text)
+
+
+# ---------------------------------------------------------------------------
+# History that cannot be rewritten
+# ---------------------------------------------------------------------------
+#: Enforced by SQLite itself, so "append-only" does not depend on every future
+#: code path remembering it. The audit trail can be neither edited nor
+#: deleted; an analyst's note can be deleted only with the alert or incident
+#: it belongs to, and never edited - a correction is a new note.
+APPEND_ONLY_TRIGGERS: tuple[str, ...] = (
+    "CREATE TRIGGER IF NOT EXISTS trg_audit_log_no_update BEFORE UPDATE ON audit_log "
+    "BEGIN SELECT RAISE(ABORT, 'audit_log is append-only'); END",
+    "CREATE TRIGGER IF NOT EXISTS trg_audit_log_no_delete BEFORE DELETE ON audit_log "
+    "BEGIN SELECT RAISE(ABORT, 'audit_log is append-only'); END",
+    "CREATE TRIGGER IF NOT EXISTS trg_analyst_notes_no_update BEFORE UPDATE ON analyst_notes "
+    "BEGIN SELECT RAISE(ABORT, 'analyst notes cannot be edited; add a new note'); END",
+)
+
+for _statement in APPEND_ONLY_TRIGGERS:
+    _table = AuditLogRow.__table__ if " ON audit_log " in _statement else AnalystNoteRow.__table__
+    sa.event.listen(_table, "after_create", sa.DDL(_statement))
 
 
 #: Every table, in dependency order. Used by init and by the integrity checks.

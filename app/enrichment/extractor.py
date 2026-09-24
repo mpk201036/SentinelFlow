@@ -232,7 +232,11 @@ class IOCExtractor:
 
         for pattern in (WINDOWS_PATH_RE, POSIX_PATH_RE):
             found.extend(
-                (IndicatorType.FILE_PATH, match.rstrip(".,;:"))
+                # Quotes too: a path written as 'C:\x\y.exe' in a log message
+                # would otherwise keep its closing quote and never match the
+                # same path stated elsewhere. Brackets are not stripped, since
+                # "Program Files (x86)" legitimately ends in one.
+                (IndicatorType.FILE_PATH, match.rstrip(".,;:'`"))
                 for match in pattern.findall(scannable)
             )
 

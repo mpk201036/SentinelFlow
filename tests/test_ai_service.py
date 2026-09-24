@@ -471,8 +471,8 @@ class TestMigrationV5:
             )
         assert current_version(db_engine) == 4
 
-        assert apply_pending_migrations(db_engine) == [5]
-        assert current_version(db_engine) == SCHEMA_VERSION == 5
+        assert apply_pending_migrations(db_engine) == list(range(5, SCHEMA_VERSION + 1))
+        assert current_version(db_engine) == SCHEMA_VERSION
         for table, columns in _V5_COLUMNS.items():
             assert set(columns) <= _columns(db_engine, table)
 

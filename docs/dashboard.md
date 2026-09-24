@@ -21,7 +21,7 @@ layers, in the order its trust was established:
 | **01 Observed** | The event, verbatim, plus the original record as received | Neutral rail; machine values in monospace |
 | **02 Determined** | Severity with its working, the rules that fired and why, ATT&CK mappings with reasons, indicators, next steps | Accent rail — reproducible |
 | **03 Suggested** | Optional AI analysis | Hatched rail, dashed border, *"Advisory only. Cannot change anything above."* |
-| **04 Decided** | Status, classification, analyst notes | Solid ink rail — the only layer with authority |
+| **04 Decided** | Status, classification, assignee, notes and history, with the forms to change them | Solid ink rail — the only layer with authority |
 
 With AI disabled (the default) the third layer says so plainly — *"Everything
 above is complete without it"* — rather than disappearing, because the
@@ -141,3 +141,24 @@ focus rings; keyboard focus shows the same tooltip as hover; charts carry
 entrance animation; `forced-colors` and print styles keep identity without
 hue. The layout reflows to a single column at phone width with no horizontal
 page scroll.
+
+## Forms
+
+The Decided layer is where the console stops being read-only. Its forms follow
+three rules:
+
+* **Primary actions wear solid ink**, the Decided rail's colour, because that
+  layer holds the authority. The accent stays reserved for focus rings and for
+  SentinelFlow's own determinations.
+* **A refusal is shown beside the form that caused it**, as `role="alert"`, with
+  the analyst's input kept. Each form's `action` carries its section's anchor,
+  so the re-rendered page lands on the message rather than at the top.
+* **Success redirects back** (Post/Redirect/Get) with a fixed confirmation code,
+  shown in the section the page returns to. The URL carries the code, never
+  the message.
+
+Buttons that start slow work, such as asking the local model, disable
+themselves and say what is happening; `console.js` does that without any inline
+script, and every form still works without JavaScript. The rules, the audit
+trail and the CSRF defences behind the forms are in [workflow.md](workflow.md).
+

@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "_macros.html" import severity, status %}
+{% from "_macros.html" import audit_trail, severity, status %}
 {% block title %}{{ alert.title }}{% endblock %}
 {% block content %}
 <header class="page-head page-head--alert rise rise-1">
@@ -192,13 +192,22 @@
   </section>
 
   {# ------------------------------------------------------------------ 03 #}
-  <section class="stratum stratum--suggested rise rise-4" aria-labelledby="s-suggested">
+  <section id="suggested" class="stratum stratum--suggested rise rise-4" aria-labelledby="s-suggested">
     <header class="stratum-rail">
       <p class="stratum-index">03</p>
       <h2 id="s-suggested" class="stratum-name">Suggested</h2>
       <p class="stratum-claim">Advisory only. Cannot change anything above.</p>
     </header>
     <div class="stratum-body">
+      {% if notice and notice[0] == "suggested" %}<p class="notice" role="status">{{ notice[1] }}</p>{% endif %}
+      {% if errors.ai %}<p class="form-error" role="alert">{{ errors.ai }}</p>{% endif %}
+      {% if ai_ready %}
+      <form class="ai-request" method="post" action="/alerts/{{ alert.alert_id }}/ai-analysis#suggested">
+        <input type="hidden" name="{{ csrf_field }}" value="{{ csrf_token }}">
+        <button type="submit" class="button" data-pending="Asking the local model… this can take a minute">{{ 'Ask again' if analyses else 'Ask the local model' }}</button>
+        <span class="muted small">Advisory. The model never sees the score above and cannot change anything.</span>
+      </form>
+      {% endif %}
       {% if analyses %}
       {% set analysis = analyses[0] %}
       <p class="advisory-stamp">AI suggestion · not authoritative</p>
@@ -242,7 +251,7 @@
       {% endif %}
       {% else %}
       <p class="quiet-state">
-        {% if ai_enabled and not ai_problem %}No analysis has been requested for this alert. Ask the local model with <code class="mono">sentinelflow ai analyze {{ alert.alert_id|string|truncate(8, True, '') }}</code>.
+        {% if ai_enabled and not ai_problem %}No analysis has been requested for this alert. Ask above, or run <code class="mono">sentinelflow ai analyze {{ alert.alert_id|string|truncate(8, True, '') }}</code>.
         {% elif ai_enabled %}AI is enabled but not in use: {{ ai_problem }}
         {% else %}AI is off. Everything above is complete without it — the model is an optional assistant, not a dependency.{% endif %}
       </p>
@@ -251,28 +260,91 @@
   </section>
 
   {# ------------------------------------------------------------------ 04 #}
-  <section class="stratum stratum--decided rise rise-5" aria-labelledby="s-decided">
+  <section id="decided" class="stratum stratum--decided rise rise-5" aria-labelledby="s-decided">
     <header class="stratum-rail">
       <p class="stratum-index">04</p>
       <h2 id="s-decided" class="stratum-name">Decided</h2>
       <p class="stratum-claim">The only layer that can close this alert.</p>
     </header>
     <div class="stratum-body">
+      {% if notice and notice[0] == "decided" %}<p class="notice" role="status">{{ notice[1] }}</p>{% endif %}
       <dl class="facts facts--compact">
         <div><dt>Status</dt><dd>{{ status(alert.status.value) }}</dd></div>
         <div><dt>Classification</dt><dd>{{ alert.classification.value|humanise if alert.classification else 'Not yet classified' }}</dd></div>
         <div><dt>Assigned to</dt><dd>{{ alert.assigned_to or 'Unassigned' }}</dd></div>
         {% if alert.closed_at %}<div><dt>Closed</dt><dd class="mono">{{ alert.closed_at|ts }} UTC</dd></div>{% endif %}
       </dl>
+
+      {% if alert.status.value == 'new' %}
+      <form class="take-it" method="post" action="/alerts/{{ alert.alert_id }}/decision#decided">
+        <input type="hidden" name="{{ csrf_field }}" value="{{ csrf_token }}">
+        <input type="hidden" name="updated_at" value="{{ alert.updated_at.isoformat() }}">
+        <input type="hidden" name="status" value="investigating">
+        <input type="hidden" name="assigned_to" value="{{ analyst }}">
+        <button type="submit" class="button button--primary" data-pending="Taking it…">Take it</button>
+        <span class="muted small">Start investigating, assigned to {{ analyst }}.</span>
+      </form>
+      {% endif %}
+
+      <form class="decision" method="post" action="/alerts/{{ alert.alert_id }}/decision#decided" aria-labelledby="decide-head">
+        <h3 id="decide-head">Record a decision</h3>
+        {% if errors.decision %}<p class="form-error" role="alert" id="decision-error">{{ errors.decision }}</p>{% endif %}
+        <input type="hidden" name="{{ csrf_field }}" value="{{ csrf_token }}">
+        <input type="hidden" name="updated_at" value="{{ alert.updated_at.isoformat() }}">
+        <div class="field-row">
+          <label class="field">
+            <span class="label">Status</span>
+            <select name="status">
+              {% for value in alert_statuses %}<option value="{{ value }}"{% if value == form.status %} selected{% endif %}>{{ value|humanise }}</option>{% endfor %}
+            </select>
+          </label>
+          <label class="field">
+            <span class="label">Classification</span>
+            <select name="classification">
+              {% if not alert.classification %}<option value=""{% if not form.classification %} selected{% endif %}>Not yet classified</option>{% endif %}
+              {% for value in classifications %}<option value="{{ value }}"{% if value == form.classification %} selected{% endif %}>{{ value|humanise }}</option>{% endfor %}
+            </select>
+          </label>
+          <label class="field">
+            <span class="label">Assigned to</span>
+            <input type="text" name="assigned_to" value="{{ form.assigned_to }}" maxlength="128" autocomplete="off" placeholder="Unassigned">
+          </label>
+        </div>
+        <label class="field">
+          <span class="label">Reason</span>
+          <textarea name="reason" rows="3" maxlength="1000" aria-describedby="reason-hint{% if errors.decision %} decision-error{% endif %}">{{ form.reason }}</textarea>
+          <span class="hint" id="reason-hint">Required to close, reopen or escalate. Closing also needs a classification. The reason goes into the audit trail.</span>
+        </label>
+        <div class="form-actions">
+          <button type="submit" class="button button--primary" data-pending="Recording…">Record decision</button>
+          <span class="muted small">As {{ analyst }}</span>
+        </div>
+      </form>
+
+      <h3 id="notes">Notes</h3>
+      {% if notice and notice[0] == "notes" %}<p class="notice" role="status">{{ notice[1] }}</p>{% endif %}
       {% if notes %}
       <ol class="notes">
         {% for note in notes %}
-        <li class="note"><p class="note-meta"><span>{{ note.author }}</span> <span class="mono muted">{{ note.created_at|ts('%Y-%m-%d %H:%M') }} UTC</span></p><p>{{ note.body }}</p></li>
+        <li class="note"><p class="note-meta"><span>{{ note.author }}</span> <span class="mono muted">{{ note.created_at|ts('%Y-%m-%d %H:%M') }} UTC</span></p><p class="note-body">{{ note.body }}</p></li>
         {% endfor %}
       </ol>
       {% else %}
-      <p class="quiet-state">No analyst decision recorded yet.</p>
+      <p class="quiet-state">No notes yet.</p>
       {% endif %}
+      <form class="note-form" method="post" action="/alerts/{{ alert.alert_id }}/notes#notes" aria-label="Add a note">
+        {% if errors.note %}<p class="form-error" role="alert">{{ errors.note }}</p>{% endif %}
+        <input type="hidden" name="{{ csrf_field }}" value="{{ csrf_token }}">
+        <label class="field">
+          <span class="label">Add a note</span>
+          <textarea name="body" rows="3" maxlength="8192" required>{{ form.body }}</textarea>
+          <span class="hint">Notes cannot be edited afterwards. A correction is a new note.</span>
+        </label>
+        <div class="form-actions"><button type="submit" class="button" data-pending="Adding…">Add note</button></div>
+      </form>
+
+      <h3 id="history">History</h3>
+      {{ audit_trail(history) }}
     </div>
   </section>
 </div>

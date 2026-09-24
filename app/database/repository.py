@@ -43,7 +43,15 @@ from app.database.tables import (
 from app.models.ai import AIAnalysis
 from app.models.alert import Alert
 from app.models.analyst import AnalystNote, AuditEntry
-from app.models.enums import AlertStatus, EventType, IncidentStatus, IndicatorType, Severity
+from app.models.enums import (
+    AlertStatus,
+    AuditAction,
+    Classification,
+    EventType,
+    IncidentStatus,
+    IndicatorType,
+    Severity,
+)
 from app.models.event import SecurityEvent
 from app.models.incident import Incident
 from app.models.indicator import Indicator
@@ -491,16 +499,63 @@ def severity_breakdown(session: Session) -> dict[str, int]:
 
 
 def update_alert_status(session: Session, alert_id: UUID, status: AlertStatus) -> AlertRow | None:
-    """Change an alert's status. Callers are expected to write an audit entry."""
+    """Change an alert's status. Callers are expected to write an audit entry.
+
+    Low-level: no workflow rules. Analyst decisions go through
+    :class:`app.services.workflow.AnalystWorkflow`, which applies them and
+    audits the change.
+    """
     row = session.get(AlertRow, alert_id)
     if row is None:
         return None
     row.status = status
     row.updated_at = _now()
-    if not status.is_open and row.closed_at is None:
-        row.closed_at = row.updated_at
+    row.closed_at = _closed_at(row.closed_at, status, row.updated_at)
     session.flush()
     return row
+
+
+def _closed_at(current: datetime | None, status: AlertStatus, now: datetime) -> datetime | None:
+    """Closing stamps the time once; reopening clears it."""
+    if status.is_open:
+        return None
+    return current or now
+
+
+def update_alert_workflow(
+    session: Session,
+    alert_id: UUID,
+    *,
+    expected_updated_at: datetime,
+    status: AlertStatus,
+    classification: Classification | None,
+    assigned_to: str | None,
+) -> datetime | None:
+    """Apply an analyst decision, only if nobody changed the alert meanwhile.
+
+    A compare-and-swap on ``updated_at``: the ``UPDATE`` matches only the
+    version the decision was made against, so two browser tabs cannot
+    silently overwrite each other. Returns the new ``updated_at``, or None if
+    the alert had changed (or does not exist).
+    """
+    row = session.get(AlertRow, alert_id)
+    if row is None:
+        return None
+    now = _now()
+    result = session.execute(
+        sa.update(AlertRow)
+        .where(AlertRow.alert_id == alert_id, AlertRow.updated_at == expected_updated_at)
+        .values(
+            status=status,
+            classification=classification,
+            assigned_to=assigned_to,
+            updated_at=now,
+            closed_at=_closed_at(row.closed_at, status, now),
+        )
+        .execution_options(synchronize_session="fetch")
+    )
+    session.flush()
+    return now if cast(CursorResult[Any], result).rowcount == 1 else None
 
 
 # ---------------------------------------------------------------------------
@@ -619,6 +674,29 @@ def count_incidents(session: Session, *, status: IncidentStatus | None = None) -
     return int(session.scalar(query) or 0)
 
 
+def update_incident_workflow(
+    session: Session,
+    incident_id: UUID,
+    *,
+    expected_updated_at: datetime,
+    status: IncidentStatus,
+    assigned_to: str | None,
+) -> datetime | None:
+    """Apply an analyst decision to an incident. Compare-and-swap, as for alerts."""
+    now = _now()
+    result = session.execute(
+        sa.update(IncidentRow)
+        .where(
+            IncidentRow.incident_id == incident_id,
+            IncidentRow.updated_at == expected_updated_at,
+        )
+        .values(status=status, assigned_to=assigned_to, updated_at=now)
+        .execution_options(synchronize_session="fetch")
+    )
+    session.flush()
+    return now if cast(CursorResult[Any], result).rowcount == 1 else None
+
+
 def update_incident_status(
     session: Session, incident_id: UUID, status: IncidentStatus
 ) -> IncidentRow | None:
@@ -689,10 +767,14 @@ def add_note(session: Session, note: AnalystNote) -> AnalystNoteRow:
     return row
 
 
-def list_notes(session: Session, *, alert_id: UUID | None = None) -> list[AnalystNote]:
+def list_notes(
+    session: Session, *, alert_id: UUID | None = None, incident_id: UUID | None = None
+) -> list[AnalystNote]:
     query = select(AnalystNoteRow).order_by(AnalystNoteRow.created_at.asc())
     if alert_id is not None:
         query = query.where(AnalystNoteRow.alert_id == alert_id)
+    if incident_id is not None:
+        query = query.where(AnalystNoteRow.incident_id == incident_id)
     return [mappers.row_to_note(row) for row in session.scalars(query).all()]
 
 
@@ -704,13 +786,63 @@ def record_audit(session: Session, entry: AuditEntry) -> AuditLogRow:
     return row
 
 
-def list_audit(
-    session: Session, *, object_id: UUID | None = None, limit: int = 100
-) -> list[AuditEntry]:
-    query = select(AuditLogRow).order_by(AuditLogRow.occurred_at.desc()).limit(limit)
+def _audit_filters(
+    object_id: UUID | None, object_type: str | None, action: AuditAction | None
+) -> list[Any]:
+    clauses: list[Any] = []
     if object_id is not None:
-        query = query.where(AuditLogRow.object_id == object_id)
+        clauses.append(AuditLogRow.object_id == object_id)
+    if object_type is not None:
+        clauses.append(AuditLogRow.object_type == object_type)
+    if action is not None:
+        clauses.append(AuditLogRow.action == action)
+    return clauses
+
+
+def list_audit(
+    session: Session,
+    *,
+    object_id: UUID | None = None,
+    object_type: str | None = None,
+    action: AuditAction | None = None,
+    limit: int = 100,
+    offset: int = 0,
+    oldest_first: bool = False,
+) -> list[AuditEntry]:
+    """The audit trail, newest first unless asked otherwise.
+
+    Ties on ``occurred_at`` are broken by insertion order, so a status change
+    and the classification recorded in the same decision always read in the
+    order they were written.
+    """
+    order = (
+        (AuditLogRow.occurred_at.asc(), sa.text("audit_log.rowid ASC"))
+        if oldest_first
+        else (AuditLogRow.occurred_at.desc(), sa.text("audit_log.rowid DESC"))
+    )
+    query = (
+        select(AuditLogRow)
+        .where(*_audit_filters(object_id, object_type, action))
+        .order_by(*order)
+        .limit(limit)
+        .offset(offset)
+    )
     return [mappers.row_to_audit(row) for row in session.scalars(query).all()]
+
+
+def count_audit(
+    session: Session,
+    *,
+    object_id: UUID | None = None,
+    object_type: str | None = None,
+    action: AuditAction | None = None,
+) -> int:
+    query = (
+        select(func.count())
+        .select_from(AuditLogRow)
+        .where(*_audit_filters(object_id, object_type, action))
+    )
+    return int(session.scalar(query) or 0)
 
 
 # ---------------------------------------------------------------------------
