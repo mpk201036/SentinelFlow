@@ -245,7 +245,8 @@ class IngestionService:
                 )
                 continue
 
-            assert parsed.record is not None
+            if parsed.record is None:  # an unparsed record was handled just above
+                raise RuntimeError("parser reported success without a record")
             try:
                 events.append(adapter.normalise(parsed.record))
             except AdapterError as exc:

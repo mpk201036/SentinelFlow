@@ -26,8 +26,6 @@ from app.models.enums import IndicatorType
 from app.models.event import SecurityEvent
 from app.models.indicator import Indicator
 
-pytestmark = pytest.mark.unit
-
 
 def event(**overrides: object) -> SecurityEvent:
     payload: dict[str, object] = {
@@ -37,7 +35,7 @@ def event(**overrides: object) -> SecurityEvent:
         "hostname": "WIN-LAB-01",
     }
     payload.update(overrides)
-    return SecurityEvent(**payload)  # type: ignore[arg-type]
+    return SecurityEvent(**payload)
 
 
 def values(result, indicator_type: IndicatorType) -> set[str]:
@@ -47,6 +45,7 @@ def values(result, indicator_type: IndicatorType) -> set[str]:
 # ---------------------------------------------------------------------------
 # False positives - the important half
 # ---------------------------------------------------------------------------
+@pytest.mark.unit
 class TestWhatMustNotBeExtracted:
     @pytest.mark.parametrize(
         "text",
@@ -91,6 +90,7 @@ class TestWhatMustNotBeExtracted:
 # ---------------------------------------------------------------------------
 # Defanging
 # ---------------------------------------------------------------------------
+@pytest.mark.unit
 class TestRefang:
     @pytest.mark.parametrize(
         "defanged, expected",
@@ -127,6 +127,7 @@ class TestRefang:
 # ---------------------------------------------------------------------------
 # Structured fields
 # ---------------------------------------------------------------------------
+@pytest.mark.unit
 class TestStructuredExtraction:
     def test_addresses_come_from_typed_fields_with_their_names(self) -> None:
         result = IOCExtractor().extract(event(src_ip="10.0.0.5", dst_ip="192.0.2.77"))
@@ -176,6 +177,7 @@ class TestStructuredExtraction:
 # ---------------------------------------------------------------------------
 # Free text
 # ---------------------------------------------------------------------------
+@pytest.mark.unit
 class TestFreeTextExtraction:
     def test_a_realistic_download_command(self) -> None:
         result = IOCExtractor().extract(
@@ -216,6 +218,7 @@ class TestFreeTextExtraction:
 # ---------------------------------------------------------------------------
 # Bookkeeping
 # ---------------------------------------------------------------------------
+@pytest.mark.unit
 class TestExtractionBookkeeping:
     def test_the_same_value_twice_is_one_indicator_with_two_sightings(self) -> None:
         result = IOCExtractor().extract(event(src_ip="10.0.0.5", command_line="ping 10.0.0.5"))
@@ -261,6 +264,7 @@ class TestExtractionBookkeeping:
 # ---------------------------------------------------------------------------
 # Context, not verdict
 # ---------------------------------------------------------------------------
+@pytest.mark.unit
 class TestIndicatorsCarryNoVerdict:
     def test_an_indicator_has_no_maliciousness_field(self) -> None:
         """8.8.8.8 in a DNS query is an indicator. It is not malicious."""

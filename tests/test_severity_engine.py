@@ -33,8 +33,6 @@ from app.services import (
 )
 from app.services.context import BusinessHours, EnvironmentContext
 
-pytestmark = pytest.mark.unit
-
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 #: A context with nothing in it, so a test exercising one factor is not
@@ -52,7 +50,7 @@ def event(**overrides: object) -> SecurityEvent:
         "process_name": "powershell.exe",
     }
     payload.update(overrides)
-    return SecurityEvent(**payload)  # type: ignore[arg-type]
+    return SecurityEvent(**payload)
 
 
 def detection(**overrides: object) -> DetectionResult:
@@ -69,7 +67,7 @@ def detection(**overrides: object) -> DetectionResult:
         ],
     }
     payload.update(overrides)
-    return DetectionResult(**payload)  # type: ignore[arg-type]
+    return DetectionResult(**payload)
 
 
 def engine(context: EnvironmentContext | None = None) -> SeverityEngine:
@@ -79,6 +77,7 @@ def engine(context: EnvironmentContext | None = None) -> SeverityEngine:
 # ---------------------------------------------------------------------------
 # Environment context
 # ---------------------------------------------------------------------------
+@pytest.mark.unit
 class TestEnvironmentContext:
     def test_the_shipped_context_loads(self) -> None:
         context = load_context(PROJECT_ROOT / "data" / "context" / "environment.yaml")
@@ -124,6 +123,7 @@ class TestEnvironmentContext:
 # ---------------------------------------------------------------------------
 # Factors
 # ---------------------------------------------------------------------------
+@pytest.mark.unit
 class TestSeverityFactors:
     def test_the_base_score_is_the_worst_rule_not_the_sum(self) -> None:
         """Five LOW rules firing is five low observations, not a CRITICAL alert."""
@@ -248,6 +248,7 @@ class TestSeverityFactors:
 # ---------------------------------------------------------------------------
 # The verdict itself
 # ---------------------------------------------------------------------------
+@pytest.mark.unit
 class TestVerdict:
     def test_scoring_is_reproducible(self) -> None:
         """Same inputs, same score. No randomness, no clock, no model."""
@@ -305,6 +306,7 @@ class TestVerdict:
         assert engine().score(detections=[detection()], events=[event()]).method == "deterministic"
 
 
+@pytest.mark.unit
 class TestTheAiCannotInfluenceSeverity:
     def test_every_factor_comes_from_the_engines_own_vocabulary(self) -> None:
         """No factor can originate outside this module."""
@@ -330,6 +332,7 @@ class TestTheAiCannotInfluenceSeverity:
 # ---------------------------------------------------------------------------
 # Alert assembly
 # ---------------------------------------------------------------------------
+@pytest.mark.unit
 class TestAlertAssembly:
     def test_a_title_names_the_worst_rule_the_host_and_the_user(self) -> None:
         title = build_title([detection()], event())

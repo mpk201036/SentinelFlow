@@ -384,7 +384,7 @@ class TestOllamaClient:
 # Configuration guards
 # ===========================================================================
 def _settings(**overrides: Any) -> Settings:
-    return Settings(_env_file=None, **overrides)  # type: ignore[call-arg]
+    return Settings(_env_file=None, **overrides)
 
 
 @pytest.mark.usefixtures("clean_env")

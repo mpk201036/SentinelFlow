@@ -187,7 +187,8 @@ def alert_queue(
         limit=200,
     )
     alerts.sort(key=lambda a: (-a.severity.score, a.created_at))
-    events = {a.alert_id: repository.get_event(session, a.primary_event_id) for a in alerts}
+    by_event = repository.get_events(session, (a.primary_event_id for a in alerts))
+    events = {a.alert_id: by_event.get(a.primary_event_id) for a in alerts}
     return _render(
         request,
         "alerts.html",
@@ -321,11 +322,12 @@ def incident_page(
         return _not_found(request, settings, "investigation")
 
     members = repository.list_alerts(session, incident_id=incident.incident_id, limit=500)
-    timeline = []
-    for alert in members:
-        event = repository.get_event(session, alert.primary_event_id)
-        if event is not None:
-            timeline.append((event, alert))
+    events = repository.get_events(session, (a.primary_event_id for a in members))
+    timeline = [
+        (events[alert.primary_event_id], alert)
+        for alert in members
+        if alert.primary_event_id in events
+    ]
     timeline.sort(key=lambda pair: pair[0].timestamp)
 
     techniques: dict[str, Any] = {}

@@ -6,7 +6,7 @@ VENV   := .venv
 BIN    := $(VENV)/bin
 
 .DEFAULT_GOAL := help
-.PHONY: help setup install lint format typecheck test test-cov doctor clean
+.PHONY: help setup install lint format typecheck test test-fast test-cov fuzz check doctor clean
 
 help: ## Show available targets
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-12s\033[0m %s\n", $$1, $$2}'
@@ -28,11 +28,19 @@ format: ## Auto-format and fix lint issues
 	$(BIN)/ruff format app tests
 	$(BIN)/ruff check --fix app tests
 
-typecheck: ## Static type check
-	$(BIN)/mypy app
+typecheck: ## Static type check (application and tests)
+	$(BIN)/mypy app tests
 
 test: ## Run the test suite
 	$(BIN)/pytest
+
+test-fast: ## Unit tests only (no HTTP, no pipeline runs): for tight loops
+	$(BIN)/pytest -m unit -q
+
+fuzz: ## Long property-based run (2,000 examples per property)
+	HYPOTHESIS_PROFILE=thorough $(BIN)/pytest tests/test_properties.py -p no:cacheprovider
+
+check: lint typecheck test-cov ## Everything CI runs
 
 test-cov: ## Run tests with a coverage report
 	$(BIN)/pytest --cov=app --cov-report=term-missing --cov-report=html

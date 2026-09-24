@@ -35,7 +35,7 @@ def make_analysis(**overrides: object) -> AIAnalysis:
         "summary": "PowerShell executed on WIN-LAB-01 shortly after a successful logon.",
     }
     payload.update(overrides)
-    return AIAnalysis(**payload)  # type: ignore[arg-type]
+    return AIAnalysis(**payload)
 
 
 def make_alert(score: int = 65) -> Alert:
@@ -107,7 +107,7 @@ class TestProvenanceIsMandatory:
         }
         payload.pop(missing)
         with pytest.raises(ValidationError):
-            AIAnalysis(**payload)  # type: ignore[arg-type]
+            AIAnalysis(**payload)
 
     def test_blank_provenance_is_rejected(self) -> None:
         with pytest.raises(ValidationError, match="which provider and model"):

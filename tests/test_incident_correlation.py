@@ -22,8 +22,6 @@ from app.models.event import SecurityEvent
 from app.models.indicator import Indicator
 from app.services import CorrelationEngine, CorrelationService, Signal, TriagePipeline, signals_for
 
-pytestmark = pytest.mark.unit
-
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 BASE = datetime(2026, 9, 23, 13, 0, tzinfo=UTC)
 
@@ -37,7 +35,7 @@ def event(**overrides: object) -> SecurityEvent:
         "username": "lab-user",
     }
     payload.update(overrides)
-    return SecurityEvent(**payload)  # type: ignore[arg-type]
+    return SecurityEvent(**payload)
 
 
 def alert(event_source: SecurityEvent, *, score: int = 65, **overrides: object) -> Alert:
@@ -49,7 +47,7 @@ def alert(event_source: SecurityEvent, *, score: int = 65, **overrides: object) 
         ),
     }
     payload.update(overrides)
-    return Alert(**payload)  # type: ignore[arg-type]
+    return Alert(**payload)
 
 
 def pair(**overrides: object) -> tuple[Alert, SecurityEvent]:
@@ -60,6 +58,7 @@ def pair(**overrides: object) -> tuple[Alert, SecurityEvent]:
 # ---------------------------------------------------------------------------
 # Signals
 # ---------------------------------------------------------------------------
+@pytest.mark.unit
 class TestSignals:
     def test_host_user_and_addresses_are_signals(self) -> None:
         source = event(src_ip="192.0.2.77", dst_ip="10.0.0.5")
@@ -109,6 +108,7 @@ class TestSignals:
 # ---------------------------------------------------------------------------
 # Grouping
 # ---------------------------------------------------------------------------
+@pytest.mark.unit
 class TestGrouping:
     def test_alerts_on_the_same_host_are_grouped(self) -> None:
         pairs = [pair(), pair(timestamp=BASE + timedelta(minutes=5))]
@@ -186,6 +186,7 @@ class TestGrouping:
 # ---------------------------------------------------------------------------
 # Incidents
 # ---------------------------------------------------------------------------
+@pytest.mark.unit
 class TestIncidentDescription:
     def _group(self):
         pairs = [

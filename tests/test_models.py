@@ -194,7 +194,7 @@ class TestDetectionResult:
             "description": "PowerShell invoked with an encoded command block.",
         }
         payload.update(overrides)
-        return DetectionResult(**payload)  # type: ignore[arg-type]
+        return DetectionResult(**payload)
 
     def test_minimal_result(self) -> None:
         result = self._result()
@@ -270,7 +270,7 @@ class TestAlertSeverity:
         verdict = AlertSeverity.from_factors([])
         assert verdict.method == "deterministic"
         with pytest.raises(ValidationError):
-            AlertSeverity(score=0, level=Severity.LOW, method="ai")  # type: ignore[arg-type]
+            AlertSeverity(score=0, level=Severity.LOW, method="ai")
 
     def test_explanation_lists_every_factor(self) -> None:
         verdict = AlertSeverity.from_factors(
@@ -289,7 +289,7 @@ class TestAlert:
             ),
         }
         payload.update(overrides)
-        return Alert(**payload)  # type: ignore[arg-type]
+        return Alert(**payload)
 
     def test_defaults_to_a_new_open_alert(self) -> None:
         alert = self._alert()
@@ -349,7 +349,7 @@ class TestIncident:
             "correlation_key": "hostname:win-lab-01",
         }
         payload.update(overrides)
-        return Incident(**payload)  # type: ignore[arg-type]
+        return Incident(**payload)
 
     def test_label_reflects_the_claim_being_made(self) -> None:
         assert self._incident().display_label == "Potential Incident"

@@ -1217,11 +1217,12 @@ def show_incident(
             raise typer.Exit(code=1)
         incident = found
         members = repository.list_alerts(session, incident_id=incident.incident_id, limit=200)
-        timeline = []
-        for alert in members:
-            event = repository.get_event(session, alert.primary_event_id)
-            if event is not None:
-                timeline.append((event, alert))
+        events = repository.get_events(session, (a.primary_event_id for a in members))
+        timeline = [
+            (events[alert.primary_event_id], alert)
+            for alert in members
+            if alert.primary_event_id in events
+        ]
 
     console.print(f"\n[bold]{_u(incident.title)}[/bold]")
     console.print(f"[dim]{incident.incident_id}[/dim]\n")
@@ -1600,7 +1601,8 @@ def ai_status() -> None:
     except ProviderConfigurationError as exc:
         console.print(f"[red]AI is enabled but will not be used:[/red] {_u(exc)}")
         raise typer.Exit(code=1) from None
-    assert provider is not None  # ai_active guarantees a provider or an exception
+    if provider is None:  # ai_active guarantees a provider or an exception
+        raise typer.Exit(code=1)
     try:
         status = provider.status()
     finally:

@@ -35,7 +35,7 @@ MINIMAL = {
 
 
 def document(**overrides: object) -> dict[str, object]:
-    payload = dict(MINIMAL)
+    payload: dict[str, object] = dict(MINIMAL)
     payload.update(overrides)
     return payload
 
@@ -165,6 +165,7 @@ class TestThresholdValidation:
         )
         assert rule.is_threshold
         assert rule.kind == "threshold"
+        assert rule.threshold is not None
         assert "5 or more within 10 minutes" in rule.threshold.describe()
 
     def test_grouping_by_an_unknown_field_is_refused(self) -> None:

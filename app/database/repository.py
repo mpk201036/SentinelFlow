@@ -90,6 +90,20 @@ def get_event(session: Session, event_id: UUID) -> SecurityEvent | None:
     return mappers.row_to_event(row) if row else None
 
 
+def get_events(session: Session, event_ids: Iterable[UUID]) -> dict[UUID, SecurityEvent]:
+    """Several events in one query, keyed by id.
+
+    Pages and reports that show many alerts need the event behind each one.
+    Fetching them one at a time cost a query per alert: two hundred for a full
+    alert queue.
+    """
+    ids = list(dict.fromkeys(event_ids))
+    if not ids:
+        return {}
+    rows = session.scalars(select(EventRow).where(EventRow.event_id.in_(ids))).all()
+    return {row.event_id: mappers.row_to_event(row) for row in rows}
+
+
 def _event_filters(
     query: sa.Select[Any],
     *,
@@ -747,6 +761,25 @@ def save_ai_analysis(session: Session, analysis: AIAnalysis) -> AIAnalysisRow:
     return row
 
 
+def get_ai_analyses_for(
+    session: Session, alert_ids: Iterable[UUID]
+) -> dict[UUID, list[AIAnalysis]]:
+    """Analyses for several alerts in one query, newest first per alert."""
+    ids = list(dict.fromkeys(alert_ids))
+    found: dict[UUID, list[AIAnalysis]] = {alert_id: [] for alert_id in ids}
+    if not ids:
+        return found
+    rows = session.scalars(
+        select(AIAnalysisRow)
+        .where(AIAnalysisRow.alert_id.in_(ids))
+        .options(selectinload(AIAnalysisRow.statements))
+        .order_by(AIAnalysisRow.generated_at.desc())
+    ).all()
+    for row in rows:
+        found[row.alert_id].append(mappers.row_to_ai_analysis(row))
+    return found
+
+
 def get_ai_analyses(session: Session, alert_id: UUID) -> list[AIAnalysis]:
     rows = session.scalars(
         select(AIAnalysisRow)
@@ -776,6 +809,23 @@ def list_notes(
     if incident_id is not None:
         query = query.where(AnalystNoteRow.incident_id == incident_id)
     return [mappers.row_to_note(row) for row in session.scalars(query).all()]
+
+
+def notes_for_alerts(session: Session, alert_ids: Iterable[UUID]) -> dict[UUID, list[AnalystNote]]:
+    """Notes on several alerts in one query, oldest first per alert."""
+    ids = list(dict.fromkeys(alert_ids))
+    found: dict[UUID, list[AnalystNote]] = {alert_id: [] for alert_id in ids}
+    if not ids:
+        return found
+    rows = session.scalars(
+        select(AnalystNoteRow)
+        .where(AnalystNoteRow.alert_id.in_(ids))
+        .order_by(AnalystNoteRow.created_at.asc())
+    ).all()
+    for row in rows:
+        if row.alert_id is not None:
+            found[row.alert_id].append(mappers.row_to_note(row))
+    return found
 
 
 def record_audit(session: Session, entry: AuditEntry) -> AuditLogRow:

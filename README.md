@@ -321,10 +321,18 @@ Two defaults are deliberate:
 ## Testing
 
 ```bash
-make test         # run the suite
-make test-cov     # with coverage report
-make lint         # ruff check + format check
+make test         # about 1,270 tests, under a minute
+make test-fast    # unit tests only, about 5 seconds
+make check        # what CI runs: lint, mypy on app and tests, tests with coverage
+make fuzz         # long property-based run: 2,000 examples per property
 ```
+
+The suite covers 93% of lines and branches, the CLI included, and CI fails
+below 90%. Beyond example-based tests it uses property-based fuzzing at every
+untrusted-input boundary, renderer-level parsing of exported reports,
+query-count checks, a reproducibility test for the deterministic layer, and an
+end-to-end run over HTTP. [docs/testing.md](docs/testing.md) maps each claim in
+SECURITY.md to the tests behind it.
 
 ## Security considerations
 
@@ -360,12 +368,12 @@ where the boundaries are.
 | [docs/dashboard.md](docs/dashboard.md) | The console's design, and how the CSP shaped it |
 | [docs/workflow.md](docs/workflow.md) | Analyst decisions, their rules, the audit trail, CSRF defences |
 | [docs/reports.md](docs/reports.md) | Investigation reports, why they are safe to share, and fingerprints |
+| [docs/testing.md](docs/testing.md) | How the suite is organised, and which tests back each security claim |
 | [docs/ai-safety.md](docs/ai-safety.md) | The optional model: threat model, defences, measured behaviour |
 | [docs/roadmap.md](docs/roadmap.md) | Build stages and current status |
 | [SECURITY.md](SECURITY.md) | Threat model and controls |
 
-Further documents (`testing.md`, `demo-scenario.md`) are added with their
-stages.
+Further documents (`demo-scenario.md`) are added with their stages.
 
 ## Licence
 

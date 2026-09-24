@@ -567,4 +567,4 @@ class TestRegressions:
         from pydantic import ValidationError
 
         with pytest.raises(ValidationError):
-            Settings(_env_file=None, analyst_name=" \x07 ")  # type: ignore[call-arg]
+            Settings(_env_file=None, analyst_name=" \x07 ")

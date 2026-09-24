@@ -85,7 +85,7 @@ def build_event(**overrides: object) -> SecurityEvent:
         "tags": ["lab"],
     }
     payload.update(overrides)
-    return SecurityEvent(**payload)  # type: ignore[arg-type]
+    return SecurityEvent(**payload)
 
 
 def build_alert(event: SecurityEvent, **overrides: object) -> Alert:
@@ -133,7 +133,7 @@ def build_alert(event: SecurityEvent, **overrides: object) -> Alert:
         "tags": ["lab"],
     }
     payload.update(overrides)
-    return Alert(**payload)  # type: ignore[arg-type]
+    return Alert(**payload)
 
 
 # ---------------------------------------------------------------------------

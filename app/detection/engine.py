@@ -196,7 +196,8 @@ class DetectionEngine:
         seven — an analyst wants to know a burst happened, not receive one alert
         per event in it.
         """
-        assert rule.threshold is not None
+        if rule.threshold is None:
+            raise ValueError(f"rule {rule.rule_id} is not a threshold rule")
         spec = rule.threshold
         window = spec.within_minutes * 60
 

@@ -24,7 +24,7 @@ def make_event(**overrides: object) -> SecurityEvent:
         "source": "sysmon",
     }
     payload.update(overrides)
-    return SecurityEvent(**payload)  # type: ignore[arg-type]
+    return SecurityEvent(**payload)
 
 
 class TestMinimalEvent:
@@ -47,7 +47,7 @@ class TestMinimalEvent:
         payload = {"timestamp": "2026-09-23T13:42:10Z", "source": "sysmon"}
         payload.pop(missing)
         with pytest.raises(ValidationError):
-            SecurityEvent(**payload)  # type: ignore[arg-type]
+            SecurityEvent(**payload)
 
 
 class TestEvidenceIsImmutable:

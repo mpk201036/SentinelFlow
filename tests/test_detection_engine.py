@@ -40,7 +40,7 @@ def event(**overrides: object) -> SecurityEvent:
         "parent_process": "cmd.exe",
     }
     payload.update(overrides)
-    return SecurityEvent(**payload)  # type: ignore[arg-type]
+    return SecurityEvent(**payload)
 
 
 def rule(**overrides: object) -> RuleDefinition:
@@ -52,11 +52,11 @@ def rule(**overrides: object) -> RuleDefinition:
         "detection": {"event_types": ["process_creation"]},
     }
     payload.update(overrides)
-    return RuleDefinition(**payload)  # type: ignore[arg-type]
+    return RuleDefinition(**payload)
 
 
 def condition(**kwargs: object) -> Condition:
-    return Condition(**kwargs)  # type: ignore[arg-type]
+    return Condition(**kwargs)
 
 
 # ---------------------------------------------------------------------------
@@ -195,29 +195,35 @@ class TestLogic:
         assert evidence is not None and evidence[0].field_name == "event_type"
 
     def test_all_requires_every_condition(self) -> None:
-        logic = Logic(
-            all=[
-                {"field": "process_name", "operator": "contains", "value": "powershell"},
-                {"field": "parent_process", "operator": "contains", "value": "cmd"},
-            ]
+        logic = Logic.model_validate(
+            {
+                "all": [
+                    {"field": "process_name", "operator": "contains", "value": "powershell"},
+                    {"field": "parent_process", "operator": "contains", "value": "cmd"},
+                ]
+            }
         )
         assert len(evaluate_logic(logic, event()) or []) == 2
         assert evaluate_logic(logic, event(parent_process="explorer.exe")) is None
 
     def test_any_requires_at_least_one(self) -> None:
-        logic = Logic(
-            any=[
-                {"field": "process_name", "operator": "contains", "value": "nomatch"},
-                {"field": "process_name", "operator": "contains", "value": "powershell"},
-            ]
+        logic = Logic.model_validate(
+            {
+                "any": [
+                    {"field": "process_name", "operator": "contains", "value": "nomatch"},
+                    {"field": "process_name", "operator": "contains", "value": "powershell"},
+                ]
+            }
         )
         assert len(evaluate_logic(logic, event()) or []) == 1
 
     def test_none_excludes(self) -> None:
         """Most real rules are 'this pattern, except when it is our own tooling'."""
-        logic = Logic(
-            all=[{"field": "process_name", "operator": "contains", "value": "powershell"}],
-            none=[{"field": "parent_process", "operator": "contains", "value": "cmd"}],
+        logic = Logic.model_validate(
+            {
+                "all": [{"field": "process_name", "operator": "contains", "value": "powershell"}],
+                "none": [{"field": "parent_process", "operator": "contains", "value": "cmd"}],
+            }
         )
         assert evaluate_logic(logic, event()) is None
         assert evaluate_logic(logic, event(parent_process="explorer.exe")) is not None

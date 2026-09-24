@@ -31,8 +31,6 @@ from app.models.enums import Confidence, Severity
 from app.models.event import SecurityEvent
 from app.models.mitre import MitreTechnique
 
-pytestmark = pytest.mark.unit
-
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 CATALOGUE_PATH = PROJECT_ROOT / "data" / "mitre" / "techniques.json"
 
@@ -59,7 +57,7 @@ def detection(**overrides: object) -> DetectionResult:
         "mitre_technique_ids": ["T1059.001"],
     }
     payload.update(overrides)
-    return DetectionResult(**payload)  # type: ignore[arg-type]
+    return DetectionResult(**payload)
 
 
 def event(**overrides: object) -> SecurityEvent:
@@ -71,12 +69,13 @@ def event(**overrides: object) -> SecurityEvent:
         "username": "lab-user",
     }
     payload.update(overrides)
-    return SecurityEvent(**payload)  # type: ignore[arg-type]
+    return SecurityEvent(**payload)
 
 
 # ---------------------------------------------------------------------------
 # Catalogue
 # ---------------------------------------------------------------------------
+@pytest.mark.unit
 class TestCatalogueLoading:
     def test_the_shipped_catalogue_loads_cleanly(self, catalogue: Catalogue) -> None:
         assert catalogue.errors == []
@@ -145,6 +144,7 @@ class TestCatalogueLoading:
         assert "exceeds" in load_catalogue(path).errors[0]
 
 
+@pytest.mark.unit
 class TestCatalogueLookup:
     def test_exact_lookup(self, catalogue: Catalogue) -> None:
         technique = catalogue.get("T1059.001")
@@ -175,6 +175,7 @@ class TestCatalogueLookup:
 # ---------------------------------------------------------------------------
 # Reasons
 # ---------------------------------------------------------------------------
+@pytest.mark.unit
 class TestReasons:
     def test_a_reason_names_the_rule_the_host_and_the_evidence(self) -> None:
         reason = build_reason(detection(), event())
@@ -209,6 +210,7 @@ class TestReasons:
 # ---------------------------------------------------------------------------
 # Mapping
 # ---------------------------------------------------------------------------
+@pytest.mark.unit
 class TestMapping:
     def test_a_declared_technique_is_mapped_with_its_evidence(self, catalogue: Catalogue) -> None:
         result = MitreMapper(catalogue).map_detection(detection(), event())
@@ -280,6 +282,7 @@ class TestMapping:
 # ---------------------------------------------------------------------------
 # Rules and coverage
 # ---------------------------------------------------------------------------
+@pytest.mark.unit
 class TestRulesAgainstTheCatalogue:
     def test_every_shipped_rule_reference_resolves(self, catalogue: Catalogue) -> None:
         rule_set = load_rules(PROJECT_ROOT / "rules")
@@ -311,6 +314,7 @@ class TestRulesAgainstTheCatalogue:
         assert set(coverage) == set(catalogue.tactic_names())
 
 
+@pytest.mark.unit
 class TestTheDemoScenario:
     def test_the_attack_chain_maps_across_several_tactics(self, catalogue: Catalogue) -> None:
         rule_set = load_rules(PROJECT_ROOT / "rules")
@@ -347,7 +351,9 @@ class TestCataloguePersistence:
             repository.upsert_technique(db_session, technique)
         db_session.commit()
 
-        stored = repository.upsert_technique(db_session, catalogue.get("T1110"))
+        brute_force = catalogue.get("T1110")
+        assert brute_force is not None
+        stored = repository.upsert_technique(db_session, brute_force)
         assert stored.name == "Brute Force"
 
     def test_a_mapping_to_an_unsynchronised_technique_is_refused_by_the_database(
@@ -372,6 +378,7 @@ class TestCataloguePersistence:
         db_session.rollback()
 
 
+@pytest.mark.unit
 class TestTechniqueModel:
     def test_sub_technique_relationships(self) -> None:
         technique = MitreTechnique(technique_id="T1543.003", name="Windows Service")

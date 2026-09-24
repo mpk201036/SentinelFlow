@@ -33,6 +33,8 @@ from app.database.init_db import initialize_database
 from app.database.session import get_engine, reset_engine
 from app.ingestion.generator import DEMO_ENCODED_COMMAND
 
+pytestmark = pytest.mark.integration
+
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------

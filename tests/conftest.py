@@ -7,10 +7,13 @@ environment variables, so every fixture here builds isolated settings.
 from __future__ import annotations
 
 import logging
+import os
 from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
+from hypothesis import HealthCheck
+from hypothesis import settings as hypothesis_settings
 from sqlalchemy import Engine
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -20,6 +23,45 @@ from app.database.init_db import initialize_database
 from app.database.session import create_db_engine, get_engine, reset_engine
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
+
+# Property-based tests. "default" keeps the suite fast; set
+# HYPOTHESIS_PROFILE=thorough for a long fuzzing run before a release. No
+# deadline: a test that touches SQLite is slow sometimes, and a timing failure
+# would be noise rather than a finding.
+hypothesis_settings.register_profile(
+    "default",
+    max_examples=60,
+    deadline=None,
+    suppress_health_check=[HealthCheck.function_scoped_fixture, HealthCheck.too_slow],
+)
+hypothesis_settings.register_profile(
+    "thorough",
+    max_examples=2_000,
+    deadline=None,
+    suppress_health_check=[HealthCheck.function_scoped_fixture, HealthCheck.too_slow],
+)
+hypothesis_settings.load_profile(os.environ.get("HYPOTHESIS_PROFILE", "default"))
+
+
+#: Every test declares what kind it is, so "pytest -m unit" really is the fast
+#: subset and "-m ai" really is every test that needs a model.
+KINDS = frozenset({"unit", "integration", "ai"})
+
+
+def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
+    # Exactly one: pytest adds a class's marker to its module's, so a
+    # database-backed class inside a "unit" module used to be both, and ran
+    # under "-m unit".
+    wrong = []
+    for item in items:
+        kinds = KINDS & {mark.name for mark in item.iter_markers()}
+        if len(kinds) != 1:
+            wrong.append(f"{item.nodeid} ({', '.join(sorted(kinds)) or 'none'})")
+    if wrong:
+        raise pytest.UsageError(
+            "every test must be marked exactly one of unit, integration or ai:\n  "
+            + "\n  ".join(wrong[:20])
+        )
 
 
 @pytest.fixture

@@ -309,7 +309,7 @@ def build_alert_report(
     if alert is None:
         raise ReportSubjectNotFoundError(f"no alert {alert_id}")
     moment = now or utcnow()
-    section = _section(session, alert)
+    (section,) = _sections(session, [alert])
     history, truncated = _history(session, [alert_id])
     report = Report(
         report_id=new_report_id(moment),
@@ -335,7 +335,7 @@ def build_incident_report(
         raise ReportSubjectNotFoundError(f"no incident {incident_id}")
     moment = now or utcnow()
     members = repository.list_alerts(session, incident_id=incident_id, limit=500)
-    sections = sorted((_section(session, alert) for alert in members), key=_by_time)
+    sections = sorted(_sections(session, members), key=_by_time)
     history, truncated = _history(session, [incident_id, *(a.alert_id for a in members)])
     report = Report(
         report_id=new_report_id(moment),
@@ -355,13 +355,20 @@ def build_incident_report(
     return report
 
 
-def _section(session: Session, alert: Alert) -> AlertSection:
-    return AlertSection(
-        alert=alert,
-        event=repository.get_event(session, alert.primary_event_id),
-        analyses=repository.get_ai_analyses(session, alert.alert_id),
-        notes=repository.list_notes(session, alert_id=alert.alert_id),
-    )
+def _sections(session: Session, alerts: list[Alert]) -> list[AlertSection]:
+    """Everything a report shows about each alert, in three queries whatever the count."""
+    events = repository.get_events(session, (a.primary_event_id for a in alerts))
+    analyses = repository.get_ai_analyses_for(session, (a.alert_id for a in alerts))
+    notes = repository.notes_for_alerts(session, (a.alert_id for a in alerts))
+    return [
+        AlertSection(
+            alert=alert,
+            event=events.get(alert.primary_event_id),
+            analyses=analyses.get(alert.alert_id, []),
+            notes=notes.get(alert.alert_id, []),
+        )
+        for alert in alerts
+    ]
 
 
 def _by_time(section: AlertSection) -> datetime:

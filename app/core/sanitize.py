@@ -63,9 +63,24 @@ _EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 HASH_ALGORITHMS: dict[int, str] = {32: "md5", 40: "sha1", 64: "sha256"}
 
 
+#: A value this module already shortened. The count is capped at ten digits so
+#: that a planted marker cannot carry an arbitrarily long tail past the limit.
+_ALREADY_TRUNCATED_RE = re.compile(r"\.\.\.\[truncated \d{1,10} chars\]$")
+
+
 def _truncate(value: str, max_length: int) -> str:
-    """Shorten ``value`` to ``max_length``, marking that it was shortened."""
+    """Shorten ``value`` to ``max_length``, marking that it was shortened.
+
+    Idempotent. Models re-validate every value they are loaded with, so a
+    field shortened at ingestion passes through here again each time it is
+    read back. Re-truncating it would cut off the original marker and write a
+    new one with the wrong count - a stored command line recorded as
+    "[truncated 30 chars]" would come back as "[truncated 23 chars]".
+    """
     if len(value) <= max_length:
+        return value
+    marker = _ALREADY_TRUNCATED_RE.search(value)
+    if marker is not None and marker.start() <= max_length:
         return value
     removed = len(value) - max_length
     return value[:max_length] + TRUNCATION_MARKER.format(count=removed)

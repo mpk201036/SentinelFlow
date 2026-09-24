@@ -21,6 +21,7 @@ exists, but setting them at the edge means there is no page that can forget.
 
 from __future__ import annotations
 
+import contextlib
 import time
 import uuid
 from collections import defaultdict, deque
@@ -62,6 +63,21 @@ SECURITY_HEADERS = {
 }
 
 
+def internal_error_response(request_id: str) -> JSONResponse:
+    """The one answer to an unexpected failure: nothing about it, except the ID to find it by."""
+    return JSONResponse(
+        status_code=500,
+        content={
+            "error": "internal_error",
+            "detail": (
+                "The request could not be completed. The failure has been logged with this "
+                "request id."
+            ),
+            "request_id": request_id,
+        },
+    )
+
+
 class RequestContextMiddleware(BaseHTTPMiddleware):
     """Attach a request ID, log the outcome, and set security headers."""
 
@@ -70,7 +86,19 @@ class RequestContextMiddleware(BaseHTTPMiddleware):
         request.state.request_id = request_id
         started = time.perf_counter()
 
-        response = await call_next(request)
+        try:
+            response = await call_next(request)
+        except Exception:
+            # Handled here rather than left to the framework's outermost
+            # handler, which runs outside this middleware: its 500 carried
+            # neither the request ID header nor the security headers.
+            logger.exception(
+                "unhandled error on %s %s",
+                request.method,
+                request.url.path,
+                extra={"request_id": request_id},
+            )
+            response = internal_error_response(request_id)
 
         elapsed_ms = (time.perf_counter() - started) * 1000
         response.headers["X-Request-ID"] = request_id
@@ -112,21 +140,35 @@ class BodySizeLimitMiddleware:
             return
 
         received = 0
+        exceeded = False
+        started = False
 
         async def counting_receive() -> Message:
-            nonlocal received
+            nonlocal received, exceeded
             message = await receive()
             if message["type"] == "http.request":
                 received += len(message.get("body", b""))
                 if received > self.max_bytes:
+                    exceeded = True
                     raise _BodyTooLarge(received)
             return message
 
-        try:
-            await self.app(scope, counting_receive, send)
-        except _BodyTooLarge as exc:
-            logger.warning("rejected a request body of at least %s bytes", exc.size)
-            await self._refuse(send, exc.size)
+        async def guarded_send(message: Message) -> None:
+            # The app may catch the exception above - FastAPI's body parser
+            # turns any read failure into a 400 "error parsing the body". Once
+            # the limit is crossed, whatever the app answers is dropped and
+            # the 413 below is sent instead.
+            nonlocal started
+            if exceeded:
+                return
+            started = True
+            await send(message)
+
+        with contextlib.suppress(_BodyTooLarge):
+            await self.app(scope, counting_receive, guarded_send)
+        if exceeded and not started:
+            logger.warning("rejected a request body of at least %s bytes", received)
+            await self._refuse(send, received)
 
     async def _refuse(self, send: Send, size: int) -> None:
         response = JSONResponse(
@@ -139,6 +181,7 @@ class BodySizeLimitMiddleware:
                 ),
                 "request_id": None,
             },
+            headers=SECURITY_HEADERS,
         )
         await response(_REFUSAL_SCOPE, _no_receive, send)
 

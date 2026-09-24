@@ -38,7 +38,7 @@ Legend: **Done** · *In progress* · Planned
 
 | Stage | Scope | Status |
 |---|---|---|
-| 15 | Full test suite, integration tests, coverage | Planned |
+| 15 | Full test suite, integration tests, coverage | **Done** |
 | 16 | Documentation set | Planned |
 | 17 | End-to-end demo scenario | Planned |
 | 18 | Repository polish, screenshots, release | Planned |
@@ -418,4 +418,43 @@ Each has a regression test that was confirmed to fail with the fix removed.
   auto-linked by a mail client. Found by the test that parses hostile reports.
 * **Three copies of "how an audit entry reads"** (console, CLI, report) had
   started to disagree; report exports showed no report ID. Now one module.
+
+## Stage 15 - delivered
+
+* Honest coverage: lines and branches, the CLI included (it had been excluded).
+  87% with the CLI at 34% became 93% with the CLI at 76%; CI fails below 90%
+* CI enforces types: the mypy step had `continue-on-error`, and the tests were
+  never checked. `mypy app tests` now gates every build, with pydantic's mypy
+  plugin
+* Property-based fuzzing with Hypothesis at every untrusted-input boundary:
+  sanitisers, defanging, Markdown escaping (checked by parsing), the model-reply
+  parser, the injection scan, JSON and CSV ingestion, severity bounds, storage
+  round trips, and the workflow under random decision sequences. A weekly CI
+  job runs 2,000 examples per property
+* `test_security_controls.py` - the rate limiter, streamed-body limits, the
+  generic 500 and security headers on every kind of response, none of which a
+  test had ever exercised
+* `test_query_counts.py`, `test_reproducibility.py`, `test_end_to_end.py`,
+  `test_cli_smoke.py` (every command against a demo database),
+  `test_console_forms.py` (tampered, stale and dangling form submissions)
+* Every test marked exactly one of unit, integration or ai, enforced at
+  collection; `make test-fast` runs the unit tests in about five seconds
+* `docs/testing.md`, mapping each claim in SECURITY.md to its tests
+* 1,270 tests in all (86 new)
+
+### Defects found by Stage 15's tests
+
+Each code defect has a regression test confirmed to fail without its fix.
+
+* **Truncation was not idempotent**: a stored, truncated field was truncated
+  again on every load, with a wrong count
+* **A chunked body over the limit got 400, not 413**: FastAPI's body parser
+  caught the limit's exception
+* **Unexpected 500s, and refusals from the outermost middleware, carried no
+  request ID header or security headers**
+* **N+1 queries** on the alert queue, the investigation page and the
+  investigation report (85 queries for 25 alerts, now 13 at any size)
+* **Tests marked as two kinds**: database-backed classes inside "unit" modules
+  ran under `-m unit`
+* **`assert` permitted in application code**, where `python -O` would strip it
 

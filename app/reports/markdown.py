@@ -396,7 +396,8 @@ def _alert_block(section: AlertSection, number: int, *, several: bool) -> str:
 
 def _analysis_block(section: AlertSection) -> str:
     analysis = section.latest_analysis
-    assert analysis is not None
+    if analysis is None:
+        raise ValueError("only alerts with an analysis get an AI section")
     alert = section.alert
     out: list[str] = []
     add = out.append
