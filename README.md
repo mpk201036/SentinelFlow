@@ -231,6 +231,7 @@ is true (the default for local use).
 | `PATCH` | `/api/v1/alerts/{id}`, `/api/v1/incidents/{id}` | An analyst decision: status, classification, assignee, reason |
 | `POST` | `/api/v1/alerts/{id}/notes`, `/api/v1/incidents/{id}/notes` | Add a note (notes cannot be edited) |
 | `GET` | `/api/v1/alerts/{id}/audit`, `/api/v1/incidents/{id}/audit`, `/api/v1/audit` | The audit trail |
+| `GET` | `/api/v1/alerts/{id}/report`, `/api/v1/incidents/{id}/report` | A report: `?format=markdown\|html\|json` |
 | `GET` | `/api/v1/ai/status` | Whether a local model can be asked, and if not, why |
 | `POST` | `/api/v1/alerts/{id}/ai-analysis` | Request an advisory analysis (`503` while AI is off) |
 
@@ -263,7 +264,18 @@ curl -s -X POST http://127.0.0.1:8000/api/v1/events/import \
 Writes that a browser marks as coming from another site are refused across the
 whole API, so a web page cannot use the analyst's browser to change anything.
 
-Report generation (`report`) arrives with Stage 14.
+Export a report for a ticket, a manager or the next shift:
+
+```bash
+sentinelflow report ade0 --incident              # Markdown, into reports/out/
+sentinelflow report ade0 --incident -f html      # one self-contained file
+sentinelflow verify-report reports/out/<file>    # is this copy what we produced?
+```
+
+Reports follow the same order of trust as the console, defang every link and
+domain from the evidence, and carry their own strict Content-Security-Policy
+in HTML. Every export is audited with the SHA-256 of what was produced, so a
+copy can be checked later. See [docs/reports.md](docs/reports.md).
 
 ## Optional local AI
 
@@ -347,6 +359,7 @@ where the boundaries are.
 | [docs/correlation.md](docs/correlation.md) | What links alerts, what deliberately does not |
 | [docs/dashboard.md](docs/dashboard.md) | The console's design, and how the CSP shaped it |
 | [docs/workflow.md](docs/workflow.md) | Analyst decisions, their rules, the audit trail, CSRF defences |
+| [docs/reports.md](docs/reports.md) | Investigation reports, why they are safe to share, and fingerprints |
 | [docs/ai-safety.md](docs/ai-safety.md) | The optional model: threat model, defences, measured behaviour |
 | [docs/roadmap.md](docs/roadmap.md) | Build stages and current status |
 | [SECURITY.md](SECURITY.md) | Threat model and controls |

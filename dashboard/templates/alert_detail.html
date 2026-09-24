@@ -14,6 +14,10 @@
       <li class="meta-item"><span class="label">Raised</span> <span class="mono">{{ alert.created_at|ts('%Y-%m-%d %H:%M') }} UTC</span></li>
     </ul>
   </div>
+  <div class="page-actions" role="group" aria-label="Export this report">
+    <a class="button" href="/alerts/{{ alert.alert_id }}/report" target="_blank" rel="noopener">Report</a>
+    <a class="button" href="/alerts/{{ alert.alert_id }}/report?format=markdown&amp;download=true">Markdown</a>
+  </div>
 </header>
 
 {#- The strata of trust. Each layer is shown in the order its trust was

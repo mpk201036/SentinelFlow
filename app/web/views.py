@@ -23,11 +23,14 @@ from fastapi.templating import Jinja2Templates
 
 from app import __version__
 from app.api.dependencies import CatalogueDep, RulesDep, SessionDep, SettingsDep
+from app.api.reporting import report_response
 from app.core.config import PROJECT_ROOT
 from app.database import repository
 from app.models.ai import AIAnalysis
 from app.models.enums import AlertStatus, Classification, IncidentStatus, Severity
+from app.reports import ReportFormat, ReportKind, ReportSubjectNotFoundError
 from app.services.dashboard import RANGES, SEVERITY_ORDER, collect_dashboard_stats
+from app.services.workflow import Channel
 from app.web import charts, csrf
 from app.web.formatting import FILTERS
 
@@ -357,6 +360,62 @@ def incident_page(
         notice=notice,
         status_code=status_code,
     )
+
+
+# ---------------------------------------------------------------------------
+# Reports
+# ---------------------------------------------------------------------------
+@router.get("/alerts/{alert_id}/report")
+def alert_report(
+    request: Request,
+    alert_id: str,
+    session: SessionDep,
+    settings: SettingsDep,
+    report_format: str = Query("html", alias="format", max_length=16),
+    download: bool = False,
+) -> Response:
+    return _report(request, session, settings, "alert", alert_id, report_format, download)
+
+
+@router.get("/incidents/{incident_id}/report")
+def incident_report(
+    request: Request,
+    incident_id: str,
+    session: SessionDep,
+    settings: SettingsDep,
+    report_format: str = Query("html", alias="format", max_length=16),
+    download: bool = False,
+) -> Response:
+    return _report(request, session, settings, "incident", incident_id, report_format, download)
+
+
+def _report(
+    request: Request,
+    session: Any,
+    settings: Any,
+    kind: ReportKind,
+    subject: str,
+    report_format: str,
+    download: bool,
+) -> Response:
+    parsed = _parse_uuid(subject)
+    wanted = ReportFormat(report_format) if report_format in set(ReportFormat) else None
+    what = "investigation" if kind == "incident" else "alert"
+    if parsed is None or wanted is None:
+        return _not_found(request, settings, what)
+    try:
+        return report_response(
+            request,
+            session,
+            settings,
+            kind,
+            parsed,
+            wanted,
+            download=download,
+            channel=Channel.CONSOLE,
+        )
+    except ReportSubjectNotFoundError:
+        return _not_found(request, settings, what)
 
 
 # ---------------------------------------------------------------------------

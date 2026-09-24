@@ -787,11 +787,16 @@ def record_audit(session: Session, entry: AuditEntry) -> AuditLogRow:
 
 
 def _audit_filters(
-    object_id: UUID | None, object_type: str | None, action: AuditAction | None
+    object_id: UUID | None,
+    object_type: str | None,
+    action: AuditAction | None,
+    object_ids: Sequence[UUID] | None = None,
 ) -> list[Any]:
     clauses: list[Any] = []
     if object_id is not None:
         clauses.append(AuditLogRow.object_id == object_id)
+    if object_ids is not None:
+        clauses.append(AuditLogRow.object_id.in_(list(object_ids)))
     if object_type is not None:
         clauses.append(AuditLogRow.object_type == object_type)
     if action is not None:
@@ -803,6 +808,7 @@ def list_audit(
     session: Session,
     *,
     object_id: UUID | None = None,
+    object_ids: Sequence[UUID] | None = None,
     object_type: str | None = None,
     action: AuditAction | None = None,
     limit: int = 100,
@@ -822,7 +828,7 @@ def list_audit(
     )
     query = (
         select(AuditLogRow)
-        .where(*_audit_filters(object_id, object_type, action))
+        .where(*_audit_filters(object_id, object_type, action, object_ids))
         .order_by(*order)
         .limit(limit)
         .offset(offset)

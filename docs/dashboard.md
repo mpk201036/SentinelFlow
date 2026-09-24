@@ -162,3 +162,11 @@ themselves and say what is happening; `console.js` does that without any inline
 script, and every form still works without JavaScript. The rules, the audit
 trail and the CSRF defences behind the forms are in [workflow.md](workflow.md).
 
+## Exports
+
+Every alert and investigation page has **Report** (the HTML report, opened in
+a new tab) and **Markdown** (a download) beside its title. The report page is
+not a console page: it is served under its own Content-Security-Policy, the
+one embedded in the file, because the file must work the same when it is
+opened from disk. See [reports.md](reports.md).
+

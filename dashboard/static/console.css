@@ -189,6 +189,7 @@ a:hover { text-decoration: underline; }
   max-width: 30ch;
 }
 .page-head--alert h1 { max-width: 48ch; font-size: 26px; }
+.page-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: flex-start; }
 .lede { margin-top: 8px; color: var(--ink-2); max-width: 72ch; }
 
 .meta { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 18px; margin-top: 14px; }

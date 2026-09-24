@@ -73,7 +73,8 @@
       <span class="history-actor">{% if entry.actor.value == 'system' %}SentinelFlow{% elif entry.actor.value == 'ai_assistant' %}AI assistant{% else %}{{ entry.actor_name or 'Analyst' }}{% endif %}</span>
       <span class="history-action">{{ entry.action.value|audit_label }}</span>
       {% set change = entry|audit_change %}
-      {% if change %}<span class="history-change">{{ change[0] }} → {{ change[1] }}</span>{% elif entry.action.value == 'alert_created' and entry.after %}<span class="history-change">{{ entry.after }}</span>{% endif %}
+      {% set subject = entry|audit_subject %}
+      {% if change %}<span class="history-change">{{ change[0] }} → {{ change[1] }}</span>{% elif subject %}<span class="history-change">{{ subject }}</span>{% endif %}
       <time class="history-time mono muted" datetime="{{ entry.occurred_at.isoformat() }}">{{ entry.occurred_at|ts('%Y-%m-%d %H:%M:%S') }} UTC</time>
     </p>
     {% if entry.detail %}<p class="history-detail">{{ entry.detail }}</p>{% endif %}

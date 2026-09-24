@@ -32,7 +32,7 @@ Legend: **Done** · *In progress* · Planned
 | 11 | SOC dashboard (overview + alert detail) | **Done** |
 | 12 | Optional Ollama AI provider with injection defences | **Done** |
 | 13 | Analyst workflow: status, classification, notes, audit | **Done** |
-| 14 | Investigation report generation (Markdown / HTML) | Planned |
+| 14 | Investigation report generation (Markdown / HTML) | **Done** |
 
 ## Milestone 4 — Hardening and portfolio
 
@@ -378,4 +378,44 @@ Each has a regression test that was confirmed to fail with the fix removed.
   an investigation, although the action existed.
 * **The audit log was append-only only by convention.** It is now enforced by
   the database.
+
+## Stage 14 - delivered
+
+* `app/reports/` - reports on one alert or a whole investigation, in
+  Markdown, self-contained HTML and JSON, built once into a `Report` and laid
+  out by each renderer, so the formats cannot disagree
+* The order of trust carried into the report: summary and analyst conclusion,
+  observed timeline, deterministic detections and evidence, ATT&CK mapped by
+  rule, indicators, advisory AI (labelled, beside the unchanged verdict),
+  decisions and notes, next steps, audit trail, scope and limitations. An
+  unreviewed investigation says plainly that no compromise is asserted
+* Safe to share: `md_text`, `md_code` and `md_block` keep event and model text
+  from becoming links, images, raw HTML, headings or fence breaks; links,
+  domains and e-mail addresses are defanged; the HTML file carries its own CSP
+  with no script, no fetches and one stylesheet allowed by hash
+* `defang_url`, `defang_email`, `defang_text` beside `refang`, in forms
+  `refang` reverses
+* Fingerprints: every export audited with the SHA-256 of its bytes;
+  `sentinelflow verify-report` reports verified, modified or unknown
+* CLI `report` and `verify-report`; API `GET /alerts/{id}/report` and
+  `GET /incidents/{id}/report`; console Report and Markdown buttons.
+  Cross-site exports are refused
+* `app/core/display.py` - one description of an audit entry, shared by the
+  console, the CLI and the reports, which had begun to disagree
+* `docs/reports.md`
+* 68 new tests (1,182 in all), including renderer-level tests that parse
+  hostile reports with markdown-it and an HTML parser
+
+### Defects found while building Stage 14
+
+Each has a regression test that was confirmed to fail with the fix removed.
+
+* **A refused CLI export was still audited.** The report was generated and
+  recorded before the CLI checked whether it could write the file, so the
+  trail showed an export that never happened. The check now comes first.
+* **Identifiers in the HTML report were plain text**, not code as in the
+  Markdown report, so a URL inside a hostile username would have been
+  auto-linked by a mail client. Found by the test that parses hostile reports.
+* **Three copies of "how an audit entry reads"** (console, CLI, report) had
+  started to disagree; report exports showed no report ID. Now one module.
 

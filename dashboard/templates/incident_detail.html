@@ -14,6 +14,10 @@
       {% if incident.usernames %}<li class="meta-item"><span class="label">Accounts</span> <span class="mono">{{ incident.usernames|join(', ') }}</span></li>{% endif %}
     </ul>
   </div>
+  <div class="page-actions" role="group" aria-label="Export this report">
+    <a class="button" href="/incidents/{{ incident.incident_id }}/report" target="_blank" rel="noopener">Report</a>
+    <a class="button" href="/incidents/{{ incident.incident_id }}/report?format=markdown&amp;download=true">Markdown</a>
+  </div>
 </header>
 
 {% if potential %}

@@ -2,16 +2,20 @@
 
 from __future__ import annotations
 
+from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, Query, Request, status
+from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
 from app.ai.service import AIAnalysisService, AlertNotFoundError, OutcomeKind
 from app.api import converters, schemas
 from app.api.dependencies import AIDep, PageDep, SessionDep, SettingsDep
+from app.api.reporting import report_response
 from app.database import repository
 from app.models.enums import AlertStatus, Severity
+from app.reports import ReportFormat
 from app.services.workflow import UNCHANGED, AlertDecision, AnalystWorkflow, Channel
 
 router = APIRouter(prefix="/alerts", tags=["alerts"])
@@ -110,6 +114,41 @@ def alert_audit(alert_id: UUID, session: SessionDep) -> list[schemas.AuditEntryO
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="alert not found")
     entries = repository.list_audit(session, object_id=alert_id, limit=500, oldest_first=True)
     return [converters.audit_entry(e) for e in entries]
+
+
+@router.get(
+    "/{alert_id}/report",
+    response_class=Response,
+    responses={
+        200: {"description": "The report, as Markdown, HTML or JSON."},
+        403: {"description": "The request came from another site."},
+        404: {"description": "No such alert."},
+    },
+)
+def alert_report(
+    alert_id: UUID,
+    request: Request,
+    session: SessionDep,
+    settings: SettingsDep,
+    report_format: Annotated[ReportFormat, Query(alias="format")] = ReportFormat.MARKDOWN,
+    download: bool = False,
+) -> Response:
+    """Export a report on one alert. Audited, with the SHA-256 of what was sent.
+
+    The fingerprint is also returned in `X-SentinelFlow-Report-SHA256`.
+    Markdown and HTML defang links and domains; JSON keeps raw values for
+    automation.
+    """
+    return report_response(
+        request,
+        session,
+        settings,
+        "alert",
+        alert_id,
+        report_format,
+        download=download,
+        channel=Channel.API,
+    )
 
 
 def _workflow(session: Session, analyst: str) -> AnalystWorkflow:

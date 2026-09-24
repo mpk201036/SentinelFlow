@@ -2,14 +2,18 @@
 
 from __future__ import annotations
 
+from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, Query, Request, status
+from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
 from app.api import converters, schemas
 from app.api.dependencies import PageDep, SessionDep, SettingsDep
+from app.api.reporting import report_response
 from app.database import repository
+from app.reports import ReportFormat
 from app.services.workflow import UNCHANGED, AnalystWorkflow, Channel, IncidentDecision
 
 router = APIRouter(prefix="/incidents", tags=["incidents"])
@@ -91,6 +95,36 @@ def incident_audit(incident_id: UUID, session: SessionDep) -> list[schemas.Audit
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="incident not found")
     entries = repository.list_audit(session, object_id=incident_id, limit=500, oldest_first=True)
     return [converters.audit_entry(e) for e in entries]
+
+
+@router.get(
+    "/{incident_id}/report",
+    response_class=Response,
+    responses={
+        200: {"description": "The report, as Markdown, HTML or JSON."},
+        403: {"description": "The request came from another site."},
+        404: {"description": "No such incident."},
+    },
+)
+def incident_report(
+    incident_id: UUID,
+    request: Request,
+    session: SessionDep,
+    settings: SettingsDep,
+    report_format: Annotated[ReportFormat, Query(alias="format")] = ReportFormat.MARKDOWN,
+    download: bool = False,
+) -> Response:
+    """Export an investigation report: timeline, detections, ATT&CK, indicators, AI, decisions."""
+    return report_response(
+        request,
+        session,
+        settings,
+        "incident",
+        incident_id,
+        report_format,
+        download=download,
+        channel=Channel.API,
+    )
 
 
 def _workflow(session: Session, analyst: str) -> AnalystWorkflow:

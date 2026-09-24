@@ -13,6 +13,7 @@ import json
 from datetime import datetime
 from typing import Any
 
+from app.core.display import audit_change, audit_label, audit_subject, humanise
 from app.models.base import utcnow
 
 
@@ -53,41 +54,6 @@ def pretty_json(value: Any) -> str:
     return json.dumps(value, indent=2, sort_keys=True, default=str, ensure_ascii=False)
 
 
-def humanise(value: str | None) -> str:
-    """``privileged_account`` -> ``Privileged account``."""
-    if not value:
-        return ""
-    text = value.replace("_", " ").strip()
-    return text[:1].upper() + text[1:]
-
-
-#: Audit actions whose before/after are workflow values (read as words) or
-#: names (shown verbatim). Other actions record an id or a summary there,
-#: which the history shows as detail rather than as a change.
-_VALUE_CHANGES = frozenset({"alert_status_changed", "alert_classified", "incident_status_changed"})
-_NAME_CHANGES = frozenset({"alert_assigned", "incident_assigned"})
-_ACTION_LABELS = {
-    "ai_analysis_requested": "AI analysis requested",
-    "ai_analysis_stored": "AI analysis stored",
-    "note_added": "Note added",
-}
-
-
-def audit_label(action: str) -> str:
-    """``alert_status_changed`` -> ``Alert status changed``, with "AI" kept upper case."""
-    return _ACTION_LABELS.get(action) or humanise(action)
-
-
-def audit_change(entry: Any) -> tuple[str, str] | None:
-    """The before and after worth showing for an audit entry, or None."""
-    action = entry.action.value
-    if action in _VALUE_CHANGES:
-        return (humanise(entry.before) or "—", humanise(entry.after) or "—")
-    if action in _NAME_CHANGES:
-        return (entry.before or "nobody", entry.after or "nobody")
-    return None
-
-
 FILTERS = {
     "ts": timestamp,
     "ago": ago,
@@ -96,4 +62,5 @@ FILTERS = {
     "humanise": humanise,
     "audit_label": audit_label,
     "audit_change": audit_change,
+    "audit_subject": audit_subject,
 }

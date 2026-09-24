@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+{#- The report is a file people open from disk or e-mail, where no server
+    sends headers, so its policy travels inside it: its own stylesheet by
+    hash, no script at all, nothing fetched from anywhere. -#}
+<meta http-equiv="Content-Security-Policy" content="{{ csp }}">
+<meta name="referrer" content="no-referrer">
+<meta name="generator" content="SentinelFlow {{ version }}">
+<title>{{ subject }} report · {{ report.title|defang }}</title>
+<style>{{ css }}</style>
+</head>
+<body>
+<main>
+<header>
+  <p class="eyebrow">SentinelFlow · {{ subject }} report · {{ report.report_id }}</p>
+  <h1>{{ report.title|defang }}</h1>
+  <p class="headline"><strong>{{ report.state_label }}</strong> · deterministic severity <span class="sev sev--{{ report.severity.value }}">{{ report.severity.value }} ({{ report.top_score }}/100)</span> · {{ report.alerts|length }} alert{{ 's' if report.alerts|length != 1 }}</p>
+  <dl class="facts">
+    <dt>Report ID</dt><dd class="mono">{{ report.report_id }}</dd>
+    <dt>Generated</dt><dd>{{ report.generated_at.strftime('%Y-%m-%d %H:%M') }} UTC by {{ report.generated_by }}</dd>
+    <dt>{{ subject }}</dt><dd class="mono">{{ report.subject_id }}</dd>
+    <dt>State</dt><dd>{{ report.state_label }}</dd>
+    <dt>Assigned to</dt><dd>{{ report.assigned_to or 'Unassigned' }}</dd>
+    <dt>Hosts</dt><dd>{% for h in report.hostnames %}<code>{{ h }}</code>{% if not loop.last %}, {% endif %}{% else %}-{% endfor %}</dd>
+    <dt>Accounts</dt><dd>{% for u in report.usernames %}<code>{{ u }}</code>{% if not loop.last %}, {% endif %}{% else %}-{% endfor %}</dd>
+    {% if report.window %}<dt>Event window</dt><dd>{{ report.window[0].strftime('%Y-%m-%d %H:%M:%S') }} to {{ report.window[1].strftime('%Y-%m-%d %H:%M:%S') }} UTC</dd>{% endif %}
+  </dl>
+  <p class="reading"><strong>Reading this report.</strong> Each section says where its content came from. <em>Observed</em> sections quote the logs. <em>Deterministic</em> sections were produced by rules and are reproducible. The <em>AI suggestion</em> section is advisory model output that influenced nothing else here. <em>Decided</em> sections record what an analyst concluded. Links, domains and e-mail addresses from the evidence are defanged.</p>
+</header>
+
+{% set n = namespace(i=0) %}
+{% set n.i = n.i + 1 %}
+<h2>{{ n.i }}. Summary</h2>
+<p>{% for sentence in report.summary_sentences() %}{{ sentence|defang }} {% endfor %}</p>
+<p class="conclusion"><strong>Analyst conclusion.</strong> {{ report.conclusion()|defang }}</p>
+
+{% if report.kind == 'incident' %}
+{% set n.i = n.i + 1 %}
+<h2>{{ n.i }}. Timeline <span class="source">observed</span></h2>
+<table>
+  <thead><tr><th>Time (UTC)</th><th>Host</th><th>Account</th><th>What happened</th><th>Severity</th></tr></thead>
+  <tbody>
+  {% for s in report.alerts %}
+  <tr>
+    <td class="mono nowrap">{{ s.event_time.strftime('%Y-%m-%d %H:%M:%S') }}</td>
+    <td class="nowrap"><code>{{ s.event.hostname if s.event and s.event.hostname else '-' }}</code></td>
+    <td class="nowrap"><code>{{ s.event.username if s.event and s.event.username else '-' }}</code></td>
+    <td>{{ s.alert.title|defang }}</td>
+    <td class="nowrap"><span class="sev sev--{{ s.alert.severity_level.value }}">{{ s.alert.severity_level.value }}</span> {{ s.alert.severity.score }}</td>
+  </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+
+{% set n.i = n.i + 1 %}
+<h2>{{ n.i }}. Detections, severity and evidence <span class="source">deterministic</span></h2>
+{% for s in report.alerts %}
+{% set alert = s.alert %}
+<h3>{% if report.alerts|length > 1 %}{{ loop.index }}. {% endif %}{{ alert.title|defang }}</h3>
+<p>Severity <span class="sev sev--{{ alert.severity_level.value }}">{{ alert.severity_level.value }} {{ alert.severity.score }}/100</span> (deterministic) · rule confidence {{ alert.confidence.value }} · alert <span class="mono">{{ alert.alert_id }}</span></p>
+<table>
+  <thead><tr><th>Factor</th><th class="num">Points</th><th>Why</th></tr></thead>
+  <tbody>{% for f in alert.severity.factors %}<tr><td class="mono">{{ f.name }}</td><td class="num">{{ '%+d'|format(f.points) }}</td><td>{{ f.detail|defang }}</td></tr>{% endfor %}</tbody>
+</table>
+{% for d in alert.detections %}
+<p><strong><span class="mono">{{ d.rule_id }}</span> {{ d.rule_name }}</strong> <span class="muted">(rule severity {{ d.rule_severity.value }})</span>. {{ d.description|defang }}</p>
+{% if d.matched %}<ul>{% for m in d.matched %}<li><span class="mono">{{ m.field_name }}</span> {{ m.condition|defang }}{% if m.observed_value %} → <code>{{ m.observed_value }}</code>{% endif %}</li>{% endfor %}</ul>{% endif %}
+{% endfor %}
+{% set evidence = s.evidence() %}
+{% if evidence %}
+<h4>Observed event, verbatim</h4>
+<pre>{% for name, value in evidence %}{{ name.ljust(15) }} {{ value }}
+{% endfor %}</pre>
+{% endif %}
+{% endfor %}
+
+{% if report.techniques %}
+{% set n.i = n.i + 1 %}
+<h2>{{ n.i }}. MITRE ATT&amp;CK <span class="source">mapped by rule</span></h2>
+<p>Each technique was mapped by a detection rule from SentinelFlow's local catalogue, with the reason recorded. None was suggested by a model.</p>
+<table>
+  <thead><tr><th>Technique</th><th>Name</th><th>Tactics</th><th>Why it was mapped</th></tr></thead>
+  <tbody>
+  {% for use in report.techniques %}
+  {% set url = use.technique.url|attack_url %}
+  <tr>
+    <td class="mono nowrap">{% if url %}<a href="{{ url }}" rel="noopener noreferrer">{{ use.technique.technique_id }}</a>{% else %}{{ use.technique.technique_id }}{% endif %}</td>
+    <td>{{ use.technique.name }}</td>
+    <td>{{ use.technique.tactics|join(', ') }}</td>
+    <td>{% for reason in use.reasons[:3] %}{{ reason|defang }}{% if not loop.last %}<br>{% endif %}{% endfor %}</td>
+  </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+
+{% if report.indicators %}
+{% set n.i = n.i + 1 %}
+<h2>{{ n.i }}. Indicators</h2>
+<p>Facts about strings that appeared in the evidence, not verdicts. External indicators come first. URLs, domains and e-mail addresses are defanged.</p>
+<table>
+  <thead><tr><th>Type</th><th>Value</th><th>Scope</th><th class="num">Seen</th></tr></thead>
+  <tbody>{% for i in report.indicators %}<tr><td class="nowrap">{{ i.indicator_type.value }}</td><td><code>{{ i|indicator_display }}</code></td><td>{{ i|indicator_scope }}</td><td class="num">{{ i.occurrences }}</td></tr>{% endfor %}</tbody>
+</table>
+{% endif %}
+
+{% set n.i = n.i + 1 %}
+<h2>{{ n.i }}. AI suggestion <span class="source">advisory · not authoritative</span></h2>
+{% if not report.analysed_alerts %}
+<p>No AI analysis was requested for this report's alerts. Nothing above depends on a model.</p>
+{% else %}
+<p class="muted">{{ disclaimer }}</p>
+{% for s in report.analysed_alerts %}
+{% set a = s.latest_analysis %}
+<section class="advisory">
+  <p class="stamp">AI suggestion · not authoritative</p>
+  <h3>{{ s.alert.title|defang }}</h3>
+  <p class="muted mono">{{ a.provider }}/{{ a.model }}{% if a.duration_ms %} · {{ '%.1f'|format(a.duration_ms / 1000) }} s{% endif %} · prompt {{ a.prompt_version or '-' }} · {{ a.generated_at.strftime('%Y-%m-%d %H:%M') }} UTC</p>
+  {% if a.injection_suspected %}
+  <div class="warning"><p><strong>Possible prompt injection.</strong> The evidence contained text aimed at a model. Read this analysis with extra suspicion.</p>
+    {% if a.injection_signals %}<ul>{% for signal in a.injection_signals %}<li class="mono">{{ signal|defang }}</li>{% endfor %}</ul>{% endif %}</div>
+  {% endif %}
+  <p><strong>Model summary.</strong> {{ a.summary|defang }}</p>
+  {% if a.suggested_severity %}
+  <p><strong>Suggested severity:</strong> {{ a.suggested_severity.value }}{% if a.suggested_severity_rationale %} - {{ a.suggested_severity_rationale|defang }}{% endif %} <em>(SentinelFlow's deterministic severity: {{ s.alert.severity_level.value }} {{ s.alert.severity.score }}/100, unchanged.)</em></p>
+  {% endif %}
+  {% for label, items in [('Observed', a.observed), ('Inferred', a.inferred), ('Unknown', a.unknown)] if items %}
+  <h4>{{ label }}</h4>
+  <ul>{% for st in items %}<li>{{ st.text|defang }}{% if st.downgraded %} <span class="relabel">(relabelled from observed by SentinelFlow)</span>{% endif %}</li>{% endfor %}</ul>
+  {% endfor %}
+  {% for label, items in [('Suspicious observations', a.suspicious_observations), ('Other explanations', a.possible_explanations), ('Questions for the analyst', a.analyst_questions), ('Suggested next steps', a.recommended_next_steps)] if items %}
+  <h4>{{ label }}</h4>
+  <ul>{% for item in items %}<li>{{ item|defang }}</li>{% endfor %}</ul>
+  {% endfor %}
+  {% if a.grounding_notes or a.truncated %}
+  <div class="checks"><h4>SentinelFlow checks · not written by the model</h4>
+    <ul>{% for note in a.grounding_notes %}<li>{{ note|defang }}</li>{% endfor %}{% if a.truncated %}<li>The model's reply exceeded the size limits and was shortened.</li>{% endif %}</ul></div>
+  {% endif %}
+</section>
+{% endfor %}
+{% endif %}
+
+{% set n.i = n.i + 1 %}
+<h2>{{ n.i }}. Analyst decisions <span class="source">decided</span></h2>
+<p class="conclusion"><strong>Conclusion.</strong> {{ report.conclusion()|defang }}</p>
+<table>
+  <thead><tr><th>Alert</th><th>Status</th><th>Classification</th><th>Assigned to</th></tr></thead>
+  <tbody>{% for s in report.alerts %}<tr><td>{{ s.alert.title|defang }}</td><td>{{ s.alert.status.value }}</td><td>{{ s.alert.classification.value.replace('_', ' ') if s.alert.classification else 'not classified' }}</td><td>{{ s.alert.assigned_to or '-' }}</td></tr>{% endfor %}</tbody>
+</table>
+<h4>Notes</h4>
+{% for attached_to, note in report.all_notes %}
+<div class="note"><p class="note-meta"><strong>{{ note.author }}</strong>, {{ note.created_at.strftime('%Y-%m-%d %H:%M') }} UTC, on {{ attached_to|defang }}</p><p class="note-body">{{ note.body|defang }}</p></div>
+{% else %}
+<p>No notes were recorded.</p>
+{% endfor %}
+
+{% if report.recommendations %}
+{% set n.i = n.i + 1 %}
+<h2>{{ n.i }}. Recommended next steps <span class="source">from the rules</span></h2>
+<ol>{% for rule_id, text in report.recommendations %}<li><span class="mono">{{ rule_id }}</span> {{ text|defang }}</li>{% endfor %}</ol>
+{% endif %}
+
+{% set n.i = n.i + 1 %}
+<h2>{{ n.i }}. Audit trail</h2>
+<table>
+  <thead><tr><th>Time (UTC)</th><th>Who</th><th>What</th><th>Change</th><th>Detail</th></tr></thead>
+  <tbody>{% for e in report.history %}<tr><td class="mono nowrap">{{ e.occurred_at.strftime('%Y-%m-%d %H:%M:%S') }}</td><td>{{ e|audit_who }}</td><td>{{ e.action.value|audit_label }}</td><td>{{ e|audit_summary }}</td><td class="muted">{{ (e.detail or '')[:300]|defang }}</td></tr>{% endfor %}</tbody>
+</table>
+{% if report.history_truncated %}<p>Only the first {{ report.history|length }} entries are included.</p>{% endif %}
+
+{% set n.i = n.i + 1 %}
+<h2>{{ n.i }}. Scope and limitations</h2>
+<ul>{% for line in limitations %}<li>{{ line }}</li>{% endfor %}</ul>
+
+<footer>Generated by SentinelFlow {{ version }}. Report <span class="mono">{{ report.report_id }}</span>: its SHA-256 is recorded in SentinelFlow's audit trail. Check a copy with <code>sentinelflow verify-report &lt;file&gt;</code>.</footer>
+</main>
+</body>
+</html>

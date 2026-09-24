@@ -21,6 +21,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from app.core.logging import get_logger
 from app.core.paths import FileTooLargeError, UnsafePathError
 from app.ingestion.adapters import UnknownAdapterError
+from app.reports import ReportSubjectNotFoundError
 from app.services.workflow import RecordNotFoundError, StaleDecisionError, WorkflowError
 
 logger = get_logger(__name__)
@@ -78,6 +79,10 @@ def register_error_handlers(app: FastAPI) -> None:
 
     @app.exception_handler(RecordNotFoundError)
     async def _missing(request: Request, exc: RecordNotFoundError) -> JSONResponse:
+        return _json(request, status.HTTP_404_NOT_FOUND, "not_found", str(exc))
+
+    @app.exception_handler(ReportSubjectNotFoundError)
+    async def _no_subject(request: Request, exc: ReportSubjectNotFoundError) -> JSONResponse:
         return _json(request, status.HTTP_404_NOT_FOUND, "not_found", str(exc))
 
     @app.exception_handler(StarletteHTTPException)

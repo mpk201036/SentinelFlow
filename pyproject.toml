@@ -53,6 +53,11 @@ sentinelflow = "app.cli:app"
 [tool.setuptools.packages.find]
 include = ["app*"]
 
+# The report templates ship inside the package: a report must render the same
+# from an installed wheel as from a source checkout.
+[tool.setuptools.package-data]
+"app.reports" = ["templates/*.html", "templates/*.css"]
+
 # --------------------------------------------------------------------------
 # Testing
 # --------------------------------------------------------------------------

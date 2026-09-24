@@ -1462,8 +1462,8 @@ def history(
     incident: bool = typer.Option(False, "--incident", "-i", help="An investigation's history."),
 ) -> None:
     """Everything that happened to an alert or an investigation, oldest first."""
+    from app.core.display import audit_label, audit_summary, audit_who
     from app.database import repository
-    from app.web.formatting import audit_change, audit_label
 
     settings = get_settings()
     with session_scope(settings) as session:
@@ -1478,20 +1478,98 @@ def history(
     table.add_column("What", no_wrap=True)
     table.add_column("Change")
     table.add_column("Detail", style="dim", ratio=1)
-    names = {"system": "SentinelFlow", "ai_assistant": "AI assistant"}
     for entry in entries:
-        who = entry.actor_name if entry.actor.value == "analyst" else names[entry.actor.value]
-        shown = audit_change(entry)
-        change = f"{shown[0]} -> {shown[1]}" if shown else ""
         table.add_row(
             entry.occurred_at.strftime("%Y-%m-%d %H:%M:%S"),
-            _u(who or "analyst"),
+            _u(audit_who(entry)),
             audit_label(entry.action.value),
-            _u(change),
+            _u(audit_summary(entry)),
             _u(_clip(entry.detail or "", 90)),
         )
     console.print(table)
     console.print(f"[dim]{len(entries)} entries. The audit log is append-only.[/dim]\n")
+
+
+# ---------------------------------------------------------------------------
+# Reports
+# ---------------------------------------------------------------------------
+REPORT_DIR = Path("reports/out")
+
+
+@app.command()
+def report(
+    record_id: str = typer.Argument(..., help="Alert id prefix (an incident's with --incident)."),
+    incident: bool = typer.Option(False, "--incident", "-i", help="Report on an investigation."),
+    report_format: str = typer.Option("markdown", "--format", "-f", help="markdown, html or json."),
+    output: Path | None = typer.Option(
+        None, "--output", "-o", help=f"Where to write it. Default: {REPORT_DIR}/<name>."
+    ),
+    stdout: bool = typer.Option(False, "--stdout", help="Print instead of writing a file."),
+    force: bool = typer.Option(False, "--force", help="Overwrite an existing file."),
+) -> None:
+    """Export an alert or investigation report. Every export is fingerprinted and audited."""
+    from app.reports import ReportFormat, ReportService
+    from app.services.workflow import Channel
+
+    try:
+        wanted = ReportFormat(report_format.strip().lower())
+    except ValueError:
+        console.print("[red]Unknown format.[/red] Choose from: markdown, html, json")
+        raise typer.Exit(code=1) from None
+
+    # Checked before generating: every generation is audited, and an export
+    # that is refused before it is written must not appear in the trail.
+    if output is not None and output.exists() and not force and not stdout:
+        console.print(f"[red]{_u(output)} already exists.[/red] Use --force to overwrite it.")
+        raise typer.Exit(code=1)
+
+    settings = get_settings()
+    with session_scope(settings) as session:
+        record = _resolve_record(session, record_id, incident=incident)
+        subject = record.incident_id if incident else record.alert_id
+        generated = ReportService(
+            session, analyst=settings.analyst_name, channel=Channel.CLI
+        ).generate("incident" if incident else "alert", subject, wanted)
+
+    if stdout:
+        sys.stdout.write(generated.content.decode("utf-8"))
+        return
+
+    target = output or REPORT_DIR / generated.filename
+    if target.exists() and not force:
+        console.print(f"[red]{_u(target)} already exists.[/red] Use --force to overwrite it.")
+        raise typer.Exit(code=1)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_bytes(generated.content)
+    console.print(f"[green]Report written:[/green] {_u(target)}")
+    console.print(f"  [dim]ID      {generated.report_id}[/dim]")
+    console.print(f"  [dim]SHA-256 {generated.sha256}[/dim]")
+    console.print(
+        "[dim]The fingerprint is in the audit trail. Check a copy later with: "
+        f"sentinelflow verify-report {_u(target)}[/dim]"
+    )
+
+
+@app.command("verify-report")
+def verify_report_command(
+    path: Path = typer.Argument(..., help="A report file SentinelFlow produced."),
+) -> None:
+    """Check a report file against the fingerprint recorded when it was generated."""
+    from app.reports import VerificationStatus, verify_report
+
+    if not path.is_file():
+        console.print(f"[red]No such file:[/red] {_u(path)}")
+        raise typer.Exit(code=1)
+    content = path.read_bytes()
+    settings = get_settings()
+    with session_scope(settings) as session:
+        result = verify_report(session, content)
+
+    colour = "green" if result.status is VerificationStatus.VERIFIED else "red"
+    console.print(f"[{colour}]{_u(result.message)}[/{colour}]")
+    console.print(f"  [dim]SHA-256 {result.sha256}[/dim]")
+    if result.status is not VerificationStatus.VERIFIED:
+        raise typer.Exit(code=1)
 
 
 # ---------------------------------------------------------------------------
