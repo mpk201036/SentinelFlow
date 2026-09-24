@@ -37,7 +37,7 @@ from app.enrichment.defang import defang_email, defang_text, defang_url
 from app.models.ai import AIAnalysis
 from app.models.enums import IndicatorType, StatementType
 from app.models.indicator import Indicator
-from app.reports.model import AlertSection, Report
+from app.reports.model import AlertSection, Report, indicator_scope
 
 #: Characters that can start or shape Markdown inline syntax.
 _INLINE_SPECIAL = re.compile(r"([\\`*_\[\]<>|~#!{}])")
@@ -124,12 +124,10 @@ def indicator_display(indicator: Indicator) -> str:
     return value
 
 
-def indicator_scope(indicator: Indicator) -> str:
-    if indicator.is_internal:
-        return "internal"
-    if indicator.is_documentation:
-        return "documentation range"
-    return "external"
+def indicator_scope_label(indicator: Indicator) -> str:
+    """The report's wording for :func:`indicator_scope`."""
+    scope = indicator_scope(indicator)
+    return {None: "-", "documentation": "documentation range"}.get(scope, scope or "-")
 
 
 # ---------------------------------------------------------------------------
@@ -249,7 +247,7 @@ def render_markdown(report: Report) -> str:
                     [
                         indicator.indicator_type.value,
                         md_code(indicator_display(indicator), in_table=True),
-                        indicator_scope(indicator),
+                        indicator_scope_label(indicator),
                         str(indicator.occurrences),
                     ]
                     for indicator in report.indicators

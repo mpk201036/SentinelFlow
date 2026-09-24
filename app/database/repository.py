@@ -479,22 +479,78 @@ def mark_events_triaged(session: Session, event_ids: Iterable[UUID]) -> int:
     return int(result.rowcount or 0)
 
 
-def count_recent_alerts_for_host(session: Session, hostname_key: str, *, since: datetime) -> int:
-    """Alerts already raised for a host, by the time of the event behind them.
+def alert_times_by_host(
+    session: Session, hostname_keys: Iterable[str], *, since: datetime, until: datetime
+) -> dict[str, list[datetime]]:
+    """When each host's stored alerts happened, by the time of the event behind them.
 
-    Feeds the severity engine's repeat-activity factor. Counted on the event's
-    timestamp rather than the alert's creation time, so importing a week-old
-    export does not make everything in it look like a fresh burst.
+    Feeds the severity engine's repeat-activity factor. Event time rather than
+    the alert's creation time, so importing a week-old export does not make
+    everything in it look like a fresh burst.
     """
-    return int(
-        session.scalar(
-            select(func.count())
-            .select_from(AlertRow)
-            .join(EventRow, EventRow.event_id == AlertRow.primary_event_id)
-            .where(EventRow.hostname_key == hostname_key, EventRow.timestamp >= since)
+    keys = sorted(set(hostname_keys))
+    if not keys:
+        return {}
+    rows = session.execute(
+        select(EventRow.hostname_key, EventRow.timestamp)
+        .join(AlertRow, AlertRow.primary_event_id == EventRow.event_id)
+        .where(
+            EventRow.hostname_key.in_(keys),
+            EventRow.timestamp >= since,
+            EventRow.timestamp <= until,
         )
-        or 0
+    ).all()
+    found: dict[str, list[datetime]] = {}
+    for key, moment in rows:
+        found.setdefault(key, []).append(moment)
+    return found
+
+
+def triaged_events_between(
+    session: Session,
+    *,
+    since: datetime,
+    until: datetime,
+    event_types: Iterable[EventType] | None = None,
+    limit: int = 10_000,
+) -> list[SecurityEvent]:
+    """Events an earlier triage run has seen, in a time range, oldest first.
+
+    A threshold rule's window can reach back past the batch being triaged;
+    these are the events it reaches back to. ``event_types`` narrows them to
+    the kinds of event the rules can count.
+    """
+    query = select(EventRow).where(
+        EventRow.triaged_at.is_not(None),
+        EventRow.timestamp >= since,
+        EventRow.timestamp <= until,
     )
+    if event_types is not None:
+        query = query.where(EventRow.event_type.in_(sorted(set(event_types))))
+    rows = session.scalars(query.order_by(EventRow.timestamp.asc()).limit(limit)).all()
+    return [mappers.row_to_event(row) for row in rows]
+
+
+def detection_triggers(
+    session: Session, rule_ids: Iterable[str], *, since: datetime, until: datetime
+) -> dict[str, list[SecurityEvent]]:
+    """rule_id -> the stored events each rule fired on, in a time range."""
+    ids = sorted(set(rule_ids))
+    if not ids:
+        return {}
+    rows = session.execute(
+        select(DetectionRow.rule_id, EventRow)
+        .join(EventRow, EventRow.event_id == DetectionRow.event_id)
+        .where(
+            DetectionRow.rule_id.in_(ids),
+            EventRow.timestamp >= since,
+            EventRow.timestamp <= until,
+        )
+    ).all()
+    found: dict[str, list[SecurityEvent]] = {}
+    for rule_id, row in rows:
+        found.setdefault(rule_id, []).append(mappers.row_to_event(row))
+    return found
 
 
 def count_alerts(session: Session, *, status: AlertStatus | None = None) -> int:
@@ -996,6 +1052,16 @@ def list_rejections(
     if batch_id is not None:
         query = query.where(RejectedEventRow.batch_id == batch_id)
     return [mappers.row_to_rejected(row) for row in session.scalars(query).all()]
+
+
+def first_batch_from(session: Session, origin_prefix: str) -> ImportBatchRow | None:
+    """The earliest import whose origin starts with ``origin_prefix``, if any."""
+    return session.scalars(
+        select(ImportBatchRow)
+        .where(ImportBatchRow.origin.startswith(origin_prefix, autoescape=True))
+        .order_by(ImportBatchRow.imported_at.asc())
+        .limit(1)
+    ).first()
 
 
 def list_batches(session: Session, *, limit: int = 50) -> list[ImportBatchRow]:

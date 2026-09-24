@@ -411,6 +411,16 @@ class TestPages:
         assert "seg--emphasis" in html
         assert "Table view" in html
 
+    def test_the_headline_counts_agree_with_their_nouns(
+        self, demo: Settings, client: TestClient
+    ) -> None:
+        """Stage 17: it said "1 potential investigations", and went on calling an
+        investigation potential after an analyst had confirmed it."""
+        html = " ".join(client.get("/").text.split())
+        assert "1 investigation" in html
+        assert "investigations" not in html.split("raised by deterministic rules", 1)[1][:40]
+        assert "potential investigation" not in html
+
     def test_a_single_host_is_a_stat_not_a_one_bar_chart(
         self, demo: Settings, client: TestClient
     ) -> None:

@@ -803,7 +803,9 @@ a.button--primary { background: var(--ink); border-color: var(--ink); color: var
   .span-8 { grid-column: span 12; }
 }
 @media (max-width: 860px) {
-  .shell { grid-template-columns: minmax(0, 1fr); }
+  /* One column: the bar keeps its own height and the page takes the rest,
+     rather than the two rows sharing a short page's spare height. */
+  .shell { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto 1fr; }
   .rail {
     position: static; height: auto; flex-direction: row; flex-wrap: wrap;
     align-items: center; gap: 12px; padding: 12px 16px;

@@ -6,14 +6,12 @@ description: >
   A host began exposing a service it was not exposing before. This is a change
   in attack surface, not evidence of an attack - it is just as likely to be a
   developer starting a test server or an approved firewall change.
-  #
-  # Note the empty mitre list below, which is deliberate. ATT&CK describes
-  # adversary behaviour, and exposing a service is a configuration change.
-  # T1133 (External Remote Services) covers an adversary *using* such a service
-  # to get in, which this evidence does not show. Attaching it here would look
-  # thorough and be wrong.
 severity: medium
 confidence: medium
+# The empty mitre list is deliberate. ATT&CK describes adversary behaviour,
+# and exposing a service is a configuration change. T1133 (External Remote
+# Services) covers an adversary *using* such a service to get in, which this
+# evidence does not show. Attaching it here would look thorough and be wrong.
 mitre: []
 tags: [exposure, attack_surface, driftwatch]
 false_positives:

@@ -340,11 +340,12 @@ class TestReportContent:
         assert section["event"]["url"] == "https://evil.example/x"
         assert "raw_event" not in section["event"]
         assert document["severity"]["level"] == alert.severity_level.value
-        assert {i["scope"] for i in document["indicators"]} <= {
-            "internal",
-            "external",
-            "documentation",
-        }
+        network = {"ipv4", "ipv6", "domain", "url"}
+        for indicator in document["indicators"]:
+            if indicator["indicator_type"] in network:
+                assert indicator["scope"] in {"internal", "external", "documentation"}
+            else:  # Stage 17: a hash or a path is neither inside nor outside anything
+                assert indicator["scope"] is None, indicator
 
 
 # ===========================================================================

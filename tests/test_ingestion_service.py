@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -14,6 +14,7 @@ from app.core.paths import FileTooLargeError, UnsafePathError
 from app.database import repository
 from app.ingestion import (
     IngestionService,
+    demo_base_time,
     generate_dataset,
     generate_demo_scenario,
     generate_normal_activity,
@@ -318,6 +319,27 @@ class TestGenerator:
         success = next(e for e in events if e.event_type is EventType.AUTHENTICATION_SUCCESS)
         assert len(failures) >= 5
         assert all(failure.timestamp < success.timestamp for failure in failures)
+
+    @pytest.mark.parametrize(
+        ("now", "attack"),
+        [
+            ("2026-09-24T10:00:00", "2026-09-24T02:00:00"),  # the night just gone
+            ("2026-09-24T03:00:00", "2026-09-24T02:00:00"),  # the moment its noise ends
+            ("2026-09-24T02:30:00", "2026-09-23T02:00:00"),  # tonight's is still under way
+            ("2026-09-19T12:00:00", "2026-09-19T02:00:00"),  # a Saturday: out of hours too
+        ],
+    )
+    def test_the_demo_is_the_most_recent_night_wholly_in_the_past(
+        self, now: str, attack: str
+    ) -> None:
+        """Stage 17: dated from the clock alone, the demo scored differently by hour."""
+        clock = datetime.fromisoformat(now).replace(tzinfo=UTC)
+        base = demo_base_time(clock)
+        assert base + timedelta(hours=5) == datetime.fromisoformat(attack).replace(tzinfo=UTC)
+        events = [
+            get_adapter(r.adapter).normalise(r.record) for r in generate_dataset(base_time=base)
+        ]
+        assert max(event.timestamp for event in events) <= clock
 
     def test_generation_is_reproducible(self) -> None:
         """The seed fixes every choice; it does not fix the clock.

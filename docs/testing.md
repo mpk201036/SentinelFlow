@@ -10,8 +10,8 @@ suite is organised, how it is run, and which tests stand behind each claim in
 ## Running it
 
 ```bash
-make test         # everything: about 1,380 tests, under a minute
-make test-fast    # unit tests only: about 880, in about 5 seconds
+make test         # everything: about 1,430 tests, under a minute
+make test-fast    # unit tests only: about 900, in about 5 seconds
 make check        # what CI runs: lint, types (app and tests), tests with coverage
 make fuzz         # the long property-based run: 2,000 examples per property
 ```
@@ -32,8 +32,8 @@ class inside a module marked `unit` was both kinds, and ran under `-m unit`.
 
 | Kind | What it covers | Count |
 |---|---|---|
-| `unit` | One component, no HTTP, no pipeline run | ~880 |
-| `integration` | Several layers: API, console, CLI, pipeline, database | ~500 |
+| `unit` | One component, no HTTP, no pipeline run | ~900 |
+| `integration` | Several layers: API, console, CLI, pipeline, database | ~525 |
 | `ai` | A real local model; skipped unless `SF_LIVE_AI_MODEL` is set | 2 |
 
 Beyond ordinary example-based tests, six techniques each cover something the
@@ -46,7 +46,7 @@ others cannot:
 | **Query counting** | `test_query_counts.py` | A page that starts issuing a query per row |
 | **Reproducibility** | `test_reproducibility.py` | Any nondeterminism in scores, factors, mappings or grouping |
 | **End to end over HTTP** | `test_end_to_end.py` | Pieces that pass alone but no longer fit together |
-| **Documentation checks** | `test_docs.py` | A page that describes a command, flag, endpoint or rule the code no longer has |
+| **Documentation checks** | `test_docs.py`, `test_demo_scenario.py` | A page that describes a command, flag, endpoint or rule the code no longer has, or a walkthrough whose numbers the demo no longer produces |
 
 ## Coverage
 
@@ -90,7 +90,7 @@ failed for the right reason.
 | An edited report is detected | `test_reports.py::TestFingerprints`, `test_end_to_end.py` |
 | The verdict cannot be poisoned | `test_ai_boundary.py`, `test_ai_service.py::…verdict_does_not_move…`, `test_properties.py::TestWorkflowInvariants` |
 | Rate limiting and generic errors behave | `test_security_controls.py::TestRateLimit`, `::TestErrors`, `::TestHeadersEverywhere` |
-| The same events give the same verdict | `test_reproducibility.py` |
+| The same events give the same verdict, in one import or as a feed | `test_reproducibility.py`, `test_detection_engine.py::TestThresholdAcrossBatches` |
 
 ## The documentation is tested too
 

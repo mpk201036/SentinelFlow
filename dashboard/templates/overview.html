@@ -7,8 +7,8 @@
     <p class="eyebrow">Triage overview</p>
     <h1>What needs a human</h1>
     <p class="lede">
-      {{ stats.events|compact }} events observed · {{ stats.alerts_total }} alerts raised by deterministic rules ·
-      {{ stats.incidents }} potential investigations
+      {{ stats.events|compact }} {{ 'event' if stats.events == 1 else 'events' }} observed · {{ stats.alerts_total|counted('alert') }} raised by deterministic rules ·
+      {{ stats.incidents|counted('investigation') }}
     </p>
   </div>
   {#- One filter row, above everything it scopes. Every figure below this line

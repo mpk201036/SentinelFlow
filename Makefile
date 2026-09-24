@@ -1,7 +1,11 @@
 # SentinelFlow developer tasks.
 # Run `make help` for the list.
 
-PYTHON ?= python3.13
+# The newest interpreter CI tests (3.13, then 3.12), else any python3 that is
+# 3.12 or newer. Override with: make setup PYTHON=/path/to/python
+PYTHON ?= $(shell for p in python3.13 python3.12 python3; do \
+	command -v $$p >/dev/null 2>&1 && $$p -c 'import sys; sys.exit(sys.version_info < (3, 12))' \
+	&& { echo $$p; break; }; done)
 VENV   := .venv
 BIN    := $(VENV)/bin
 
@@ -12,6 +16,8 @@ help: ## Show available targets
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-12s\033[0m %s\n", $$1, $$2}'
 
 setup: ## Create the virtual environment and install everything
+	@test -n "$(PYTHON)" || { echo "SentinelFlow needs Python 3.12 or newer, and none was found."; exit 1; }
+	@echo "Using $$($(PYTHON) --version) ($(PYTHON))"
 	$(PYTHON) -m venv $(VENV)
 	$(BIN)/python -m pip install --quiet --upgrade pip
 	$(BIN)/python -m pip install -e ".[dev]"

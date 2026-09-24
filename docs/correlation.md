@@ -94,11 +94,15 @@ far more than a number would, and it can be checked.
 ## The vocabulary is the claim
 
 An incident starts as `POTENTIAL` and is rendered as **"Potential Incident"**.
-The summary ends with *"This is a potential incident awaiting analyst review;
-no compromise is asserted."* Only an analyst moves it to `CONFIRMED`.
+While it is potential, the console and every report say plainly that no
+compromise is asserted. Only an analyst moves it to `CONFIRMED`.
 
-There is a test asserting the summary never contains "compromised", "breach" or
-"attacker" — because what a tool says it has found is a claim, and the claim has
+The summary SentinelFlow writes states facts only: how many alerts, when,
+where, who, which techniques. It says nothing about status, because it is
+written when the alerts are grouped. It used to end "awaiting analyst review",
+and that sentence was still on the page after an analyst had confirmed the
+incident. A test asserts the summary never contains "compromised", "breach" or
+"attacker", because what a tool says it has found is a claim, and the claim has
 to stay within what the evidence supports.
 
 ## Analyst work is never overwritten

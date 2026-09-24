@@ -28,6 +28,7 @@ from app.services import (
     SeverityEngine,
     SeverityWeights,
     TriagePipeline,
+    TriageResult,
     build_title,
     load_context,
 )
@@ -452,6 +453,46 @@ class TestTriagePipeline:
 
         assert result.alerts_created > 0
         assert repository.count_alerts(db_session) == 0
+
+    # Stage 17: repeat activity is counted per event, so batching cannot move it.
+    def _alerting(self, at: str) -> SecurityEvent:
+        return event(timestamp=at, command_line="powershell.exe -nop -enc SQBFAFgAIAAoAE4AZQB3AC0A")
+
+    def _repeat_points(self, result: TriageResult, source: SecurityEvent) -> int:
+        alert = next(a for a in result.alerts if a.primary_event_id == source.event_id)
+        return sum(f.points for f in alert.severity.factors if f.name == "repeat_activity")
+
+    def _triage(
+        self, session: Session, settings: Settings, events: list[SecurityEvent]
+    ) -> TriageResult:
+        repository.save_events(session, events)
+        result = TriagePipeline(session, settings).process(events)
+        session.commit()
+        return result
+
+    def test_an_alert_counts_earlier_alerts_in_its_own_batch(
+        self, db_session: Session, db_settings: Settings
+    ) -> None:
+        first = self._alerting("2026-09-23T13:00:00Z")
+        second = self._alerting("2026-09-23T13:05:00Z")
+        result = self._triage(db_session, db_settings, [second, first])
+        assert self._repeat_points(result, first) == 0
+        assert self._repeat_points(result, second) == 10
+
+    def test_alerts_at_the_same_moment_do_not_count_each_other(
+        self, db_session: Session, db_settings: Settings
+    ) -> None:
+        pair = [self._alerting("2026-09-23T13:00:00Z"), self._alerting("2026-09-23T13:00:00Z")]
+        result = self._triage(db_session, db_settings, pair)
+        assert [self._repeat_points(result, e) for e in pair] == [0, 0]
+
+    def test_an_older_event_triaged_later_does_not_borrow_from_the_future(
+        self, db_session: Session, db_settings: Settings
+    ) -> None:
+        """A late import is judged by what came before it, not by what came after."""
+        self._triage(db_session, db_settings, [self._alerting("2026-09-23T13:00:00Z")])
+        late = self._alerting("2026-09-23T12:00:00Z")
+        assert self._repeat_points(self._triage(db_session, db_settings, [late]), late) == 0
 
     def test_triaging_stored_events_is_idempotent(
         self, db_session: Session, db_settings: Settings

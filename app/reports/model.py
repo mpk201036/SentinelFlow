@@ -73,6 +73,20 @@ class ReportSubjectNotFoundError(LookupError):
     """No alert or incident has the requested id."""
 
 
+def indicator_scope(indicator: Indicator) -> str | None:
+    """Where a network indicator sits: internal, documentation or external.
+
+    ``None`` for a hash, a path or a process name, which sit nowhere. Every
+    format asks this one function, so they cannot disagree; they once called a
+    file hash "external".
+    """
+    if indicator.is_internal:
+        return "internal"
+    if not indicator.is_external:
+        return None
+    return "documentation" if indicator.is_documentation else "external"
+
+
 @dataclass(frozen=True)
 class AlertSection:
     alert: Alert
@@ -232,11 +246,13 @@ class Report:
                 f"{'s' if len(self.techniques) != 1 else ''} mapped by rule, across "
                 f"{len(tactics)} tactic{'s' if len(tactics) != 1 else ''}."
             )
-        external = [i for i in self.indicators if not i.is_internal]
+        external = [i for i in self.indicators if i.is_external]
         if self.indicators:
             sentences.append(
                 f"{len(self.indicators)} indicator{'s' if len(self.indicators) != 1 else ''} "
-                f"extracted, {len(external)} of them external."
+                f"extracted, {len(external)} of them "
+                f"{'an address or domain' if len(external) == 1 else 'addresses or domains'} "
+                "outside the estate."
             )
         classified = Counter(
             s.alert.classification.value.replace("_", " ")
@@ -414,7 +430,8 @@ def _aggregate(report: Report) -> None:
     # External indicators first: they are the ones to search for elsewhere.
     report.indicators = sorted(
         indicators.values(),
-        key=lambda i: (i.is_internal, i.indicator_type.value, i.value),
+        # Outside the estate first, then what sits nowhere, then internal.
+        key=lambda i: (not i.is_external, i.is_internal, i.indicator_type.value, i.value),
     )
     report.recommendations = list(recommendations)
 

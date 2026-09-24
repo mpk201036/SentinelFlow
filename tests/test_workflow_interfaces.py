@@ -507,6 +507,10 @@ class TestConsoleForms:
         page = client.get(response.headers["location"]).text
         assert "Decision recorded." in page
         assert "Potential incident." not in page  # the banner goes once a human rules
+        # Stage 17: the stored summary used to keep saying "awaiting analyst
+        # review" after the analyst had ruled.
+        assert "awaiting analyst review" not in page
+        assert "no compromise is asserted" not in page.lower()
         assert '<option value="potential"' not in page
         actions = [e.action for e in _trail(settings, incident_id)]
         assert AuditAction.INCIDENT_STATUS_CHANGED in actions

@@ -9,6 +9,7 @@ engine      evaluation, producing results that show their working
 from app.detection.engine import (
     DetectionEngine,
     DetectionRun,
+    ThresholdHistory,
     evaluate_condition,
     evaluate_logic,
     resolve_field,
@@ -35,6 +36,7 @@ __all__ = [
     "RuleError",
     "RuleSet",
     "Threshold",
+    "ThresholdHistory",
     "available_operators",
     "evaluate_condition",
     "evaluate_logic",

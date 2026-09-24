@@ -16,7 +16,7 @@
     <h2 class="incident-title">{{ incident.title }}</h2>
     <p class="incident-meta">
       {{ severity(incident.severity.value) }}
-      <span>{{ incident.alert_count }} alerts</span>
+      <span>{{ incident.alert_count|counted('alert') }}</span>
       {% if incident.hostnames %}<span class="mono">{{ incident.hostnames|join(', ') }}</span>{% endif %}
       {% if incident.first_event_at %}<span class="mono muted">{{ incident.first_event_at|ts('%Y-%m-%d %H:%M') }}–{{ incident.last_event_at|ts('%H:%M') }} UTC</span>{% endif %}
     </p>

@@ -112,7 +112,7 @@ COMMANDS: list[tuple[list[str], int]] = [
     # One good record among five bad ones: a partial import succeeds, and
     # every rejection is listed with its reason.
     (["import", str(SAMPLES / "malformed.json")], 0),
-    # Always with --out: the default is data/samples, the committed samples.
+    # Always with --out, so a test never writes into the working tree.
     (["generate", "--normal", "5", "--out", "{dir}/generated"], 0),
     (["ai", "status"], 0),
     (["ai", "analyze", "{alert}"], 1),
@@ -236,3 +236,19 @@ def test_a_database_from_a_newer_release_is_not_touched(empty_env: dict[str, str
     result = _run(empty_env, "alerts")
     assert result.exit_code == 1
     assert "newer than this release" in result.output
+
+
+def test_running_the_demo_twice_does_not_add_a_second_attack(empty_env: dict[str, str]) -> None:
+    """Stage 17: the scenario is dated from now, so a second run was never seen as a
+    duplicate and put a second copy of the attack into the same investigation."""
+    assert _run(empty_env, "demo").exit_code == 0
+    listing = _run(empty_env, "alerts").output
+
+    again = _run(empty_env, "demo")
+    assert again.exit_code == 0
+    assert "already in this database" in again.output
+    assert _run(empty_env, "alerts").output == listing
+
+    forced = _run(empty_env, "demo", "--force")
+    assert forced.exit_code == 0
+    assert "56 events ingested" in forced.output

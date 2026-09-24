@@ -322,7 +322,13 @@ class CorrelationEngine:
     def _summary(
         self, group: CorrelationGroup, first: datetime | None, last: datetime | None
     ) -> str:
-        """A factual description. No conclusion is drawn."""
+        """A factual description. No conclusion is drawn.
+
+        Nothing here states the incident's status. The summary is written when
+        the alerts are grouped, and a status sentence ("awaiting analyst
+        review") stayed on the page after an analyst had confirmed it. Pages and
+        reports say what the status means, from the status itself.
+        """
         parts = [
             f"{len(group)} correlated alerts",
             f"highest severity {group.severity.value}",
@@ -337,11 +343,9 @@ class CorrelationEngine:
             parts.append(f"involving {', '.join(users[:3])}")
         techniques = group.technique_ids()
         if techniques:
-            parts.append(f"mapped to {', '.join(techniques[:6])}")
-        return (
-            ". ".join([", ".join(parts)])
-            + ". This is a potential incident awaiting analyst review; no compromise is asserted."
-        )[:4096]
+            more = f" and {len(techniques) - 6} more" if len(techniques) > 6 else ""
+            parts.append(f"mapped to {', '.join(techniques[:6])}{more}")
+        return (", ".join(parts) + ".")[:4096]
 
 
 def _moment(alert: Alert, event: SecurityEvent | None) -> datetime:

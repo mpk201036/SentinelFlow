@@ -15,8 +15,8 @@ Incidents**. An analyst reviews all of it in a web console, a CLI or a REST API.
 An **optional local AI** can be asked for a second opinion. It is clearly
 labelled, and it can never change a verdict.
 
-> **Status:** the system is complete and tested. A guided demo walkthrough and
-> final repository polish are the two stages left;
+> **Status:** the system is complete, tested and walked through end to end.
+> Final repository polish is the one stage left;
 > [docs/roadmap.md](docs/roadmap.md) records every stage.
 
 ## Quick start
@@ -43,6 +43,9 @@ long on one host, it contains:
 - a service newly exposed to the network.
 
 Open the investigation, then its critical alerts.
+[docs/demo-scenario.md](docs/demo-scenario.md) walks through all of it: what
+fired and why, how the scores were reached, and the analyst's side, from the
+first decision to a verified report.
 
 ## What to look at
 
@@ -165,7 +168,7 @@ the model is consulted only on an analyst's request.
 | Rules | YAML | Detections are data; adding one needs no code change |
 | AI (optional) | Ollama | Local, free, private — and removable |
 | CLI | Typer + Rich | Every console action is also a command |
-| Testing | pytest, Hypothesis, ruff, mypy | About 1,380 tests with property-based fuzzing; lint, types and coverage enforced in CI |
+| Testing | pytest, Hypothesis, ruff, mypy | About 1,430 tests with property-based fuzzing; lint, types and coverage enforced in CI |
 
 ## Installation
 
@@ -383,7 +386,7 @@ Three defaults are deliberate:
 ## Testing
 
 ```bash
-make test         # about 1,380 tests, under a minute
+make test         # about 1,430 tests, under a minute
 make test-fast    # unit tests only, about 5 seconds
 make check        # what CI runs: lint, mypy on app and tests, tests with coverage
 make fuzz         # long property-based run: 2,000 examples per property
@@ -433,6 +436,7 @@ including knowing where the boundaries are.
 
 | Document | Contents |
 |---|---|
+| [docs/demo-scenario.md](docs/demo-scenario.md) | A guided walkthrough of the demo: what fired, why, and the analyst's side |
 | [docs/architecture.md](docs/architecture.md) | System design, data flow, and the reasons behind each choice |
 | [docs/data-model.md](docs/data-model.md) | Domain models, where the trust boundary is enforced, tables and schema versions |
 | [docs/integrations.md](docs/integrations.md) | Supported sources and their payload contracts |

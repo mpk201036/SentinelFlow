@@ -7,10 +7,10 @@
   <meta name="referrer" content="same-origin">
   <title>{% block title %}{% endblock %} · SentinelFlow</title>
   <link rel="icon" href="{{ url_for('static', path='favicon.svg') }}" type="image/svg+xml">
-  <link rel="stylesheet" href="{{ url_for('static', path='console.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', path='console.css') }}?v={{ asset_version }}">
   {#- One static script, deferred. The CSP forbids inline script, so nothing
       on any page can run unless it is this file. -#}
-  <script src="{{ url_for('static', path='console.js') }}" defer></script>
+  <script src="{{ url_for('static', path='console.js') }}?v={{ asset_version }}" defer></script>
 </head>
 <body>
   <a class="skip" href="#main">Skip to content</a>

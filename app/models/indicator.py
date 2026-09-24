@@ -47,6 +47,12 @@ _INTERNAL_NETWORKS = tuple(
     )
 )
 
+#: Indicators that name somewhere on a network, and so can be inside or
+#: outside the estate. A hash or a file path is neither.
+NETWORK_INDICATORS = frozenset(
+    {IndicatorType.IPV4, IndicatorType.IPV6, IndicatorType.DOMAIN, IndicatorType.URL}
+)
+
 #: Reserved for documentation (RFC 5737, RFC 3849). Never real infrastructure.
 _DOCUMENTATION_NETWORKS = tuple(
     ipaddress.ip_network(cidr)
@@ -135,6 +141,16 @@ class Indicator(EvidenceModel):
         if address is None:
             return False
         return any(address in network for network in _INTERNAL_NETWORKS)
+
+    @property
+    def is_external(self) -> bool:
+        """A network indicator that is not internal: somewhere outside the estate.
+
+        Not simply ``not is_internal``, which is also true of every hash, path
+        and process name: a report once said "8 of them external" of a host's
+        nine indicators, two of which were anywhere at all.
+        """
+        return self.indicator_type in NETWORK_INDICATORS and not self.is_internal
 
     @property
     def is_documentation(self) -> bool:

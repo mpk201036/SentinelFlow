@@ -51,7 +51,7 @@ Factors are summed and then clamped to 0–100. Nothing else happens.
 | `external_source` | +5 | The activity came from outside the estate |
 | `external_indicators` | +3 each, cap +9 | Breadth of external infrastructure touched |
 | `out_of_hours` | +5 | Outside the configured working hours |
-| `repeat_activity` | +10 each, cap +20 | The host already has recent alerts |
+| `repeat_activity` | +10 each, cap +20 | Earlier alerts on the same host, in the 24 hours before this activity |
 
 ### Three decisions worth explaining
 

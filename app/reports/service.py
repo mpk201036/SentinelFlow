@@ -36,6 +36,7 @@ from app.reports.model import (
     ReportKind,
     build_alert_report,
     build_incident_report,
+    indicator_scope,
 )
 from app.services.workflow import Channel
 
@@ -223,8 +224,7 @@ def to_json(report: Report) -> dict[str, Any]:
             for use in report.techniques
         ],
         "indicators": [
-            {**i.model_dump(mode="json"), "scope": _scope(i.is_internal, i.is_documentation)}
-            for i in report.indicators
+            {**i.model_dump(mode="json"), "scope": indicator_scope(i)} for i in report.indicators
         ],
         "recommendations": [
             {"rule_id": rule_id, "text": text} for rule_id, text in report.recommendations
@@ -233,7 +233,3 @@ def to_json(report: Report) -> dict[str, Any]:
         "history_truncated": report.history_truncated,
         "limitations": report.limitations(),
     }
-
-
-def _scope(internal: bool, documentation: bool) -> str:
-    return "internal" if internal else "documentation" if documentation else "external"

@@ -321,6 +321,33 @@ def generate_normal_activity(
     return records
 
 
+#: The demonstration intrusion starts at this hour, UTC. It is outside working
+#: hours on every day of the week, so the out-of-hours factor applies the same
+#: way whenever the demo is run, and the scores in docs/demo-scenario.md are
+#: the scores a reader sees.
+DEMO_START_HOUR_UTC = 2
+#: How long before the intrusion the background activity starts, and how long
+#: it runs for; see :func:`generate_dataset` and :func:`generate_normal_activity`.
+_NOISE_LEAD = timedelta(hours=5)
+_NOISE_SPAN = timedelta(hours=6)
+
+
+def demo_base_time(now: datetime | None = None) -> datetime:
+    """The ``base_time`` for the demo: the most recent night wholly in the past.
+
+    Background activity starts in the evening and the intrusion at 02:00 UTC,
+    as it would be found by the morning shift. Dated from the clock alone, the
+    same events scored five points differently depending on the hour the demo
+    was run.
+    """
+    current = (now or datetime.now(UTC)).astimezone(UTC)
+    start = current.replace(hour=DEMO_START_HOUR_UTC, minute=0, second=0, microsecond=0)
+    base = start - _NOISE_LEAD
+    while base + _NOISE_SPAN > current:
+        base -= timedelta(days=1)
+    return base
+
+
 def generate_dataset(
     *,
     normal_count: int = 40,
@@ -335,7 +362,7 @@ def generate_dataset(
     """
     records = generate_normal_activity(normal_count, seed=seed, base_time=base_time)
     if include_scenario:
-        scenario_start = base_time + timedelta(hours=5) if base_time else None
+        scenario_start = base_time + _NOISE_LEAD if base_time else None
         records.extend(generate_demo_scenario(scenario_start))
     return records
 

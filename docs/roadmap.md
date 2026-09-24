@@ -40,7 +40,7 @@ Legend: **Done** · *In progress* · Planned
 |---|---|---|
 | 15 | Full test suite, integration tests, coverage | **Done** |
 | 16 | Documentation set | **Done** |
-| 17 | End-to-end demo scenario | Planned |
+| 17 | End-to-end demo scenario | **Done** |
 | 18 | Repository polish, screenshots, release | Planned |
 
 ## Stage 1 — delivered
@@ -498,4 +498,58 @@ Each code defect has a regression test confirmed to fail without its fix.
   `from app.ai import ...` but not `import app.ai.service`
 * **A regression in `serve`'s refusal would hang the suite** rather than fail
   it; the CLI tests now stub the server out
+
+## Stage 17 - delivered
+
+* `docs/demo-scenario.md`, a guided walkthrough of the demonstration: what the
+  logs show, which rule fired, the ATT&CK mapping and the score for every
+  alert, one score added up by hand, why the alerts became one investigation,
+  the analyst's work in the console and on the command line, the report, and
+  what SentinelFlow deliberately does not conclude
+* `tests/test_demo_scenario.py` reads that page's tables and command block and
+  checks them against a real `sentinelflow demo` run: every row, every number,
+  the brief's five steps, the console, and the walkthrough's commands executed
+  line by line, ending in a verified report
+* The demo is anchored at 02:00 UTC on the most recent night wholly in the
+  past, so its scores are the same whenever it is run and match the page;
+  `sentinelflow demo` refuses to add a second copy without `--force`, and ends
+  by naming the investigation it created and where to open it
+* About 1,430 tests in all (about 45 new)
+
+### Defects found by Stage 17
+
+Running the demo as an analyst would, rather than as one import in a test,
+found these. Each has a regression test confirmed to fail without its fix.
+
+* **Verdicts depended on how events were batched.** Threshold rules counted
+  within the current triage batch only, so eight failed logons triaged as
+  they arrived never raised the brute-force alert. The repeat-activity factor
+  counted only alerts from earlier runs, so the same events scored up to 20
+  points apart. Both now read what earlier runs saw, and a feed triaged in
+  batches of 1, 5 or 13 gives exactly the verdicts of one import. The repeat
+  count is per event, strictly earlier, so a late import no longer borrows
+  points from alerts that came after it
+* **The demo's scores depended on the hour it was run**, through the
+  out-of-hours factor
+* **Running `demo` twice added a second copy of the attack** to the same
+  investigation (21 alerts after three runs), because the data is dated from
+  now and never looked like a duplicate
+* **A confirmed investigation still said "awaiting analyst review"**: the
+  status sentence was written into the summary at grouping time. The summary
+  now states facts only, and says "and 3 more" rather than silently listing
+  six of nine techniques
+* **Reports called file hashes, paths and process names "external"**: nine
+  indicators were "8 of them external" when two were. `Indicator.is_external`
+  is now the one definition, and the three report formats share one scope
+* **An author's YAML comment was printed as part of SF-0010's description**
+  on every alert page and report: inside a folded block, `#` is text
+* **On a short page at tablet width, the navigation bar grew to fill the
+  spare height** (332 pixels), and a browser could keep serving the old
+  stylesheet after an upgrade. The bar keeps its height, and asset URLs carry
+  a content hash
+* **The overview's headline was wrong twice over**: "1 potential
+  investigations", counting confirmed investigations as potential
+* **`make setup` required `python3.13`**, although 3.12 is supported and the
+  README says so. It now uses the newest supported interpreter it finds, and
+  says so plainly when there is none
 

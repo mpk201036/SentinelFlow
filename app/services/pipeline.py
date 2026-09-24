@@ -28,24 +28,19 @@ from app.core.config import Settings, get_settings
 from app.core.display import counted
 from app.core.logging import get_logger
 from app.database import repository
-from app.detection import DetectionEngine, RuleSet, load_rules
+from app.detection import DetectionEngine, DetectionRun, RuleSet, ThresholdHistory, load_rules
 from app.enrichment import EnrichmentService
 from app.mitre import Catalogue, MitreMapper, get_catalogue
 from app.models.alert import Alert
 from app.models.analyst import AuditEntry
-from app.models.enums import Actor, AuditAction
+from app.models.enums import Actor, AuditAction, EventType
 from app.models.event import SecurityEvent
 from app.models.indicator import Indicator
 from app.services.alerting import AlertFactory
 from app.services.context import EnvironmentContext, get_context
-from app.services.severity import SeverityEngine
+from app.services.severity import REPEAT_WINDOW_HOURS, SeverityEngine
 
 logger = get_logger(__name__)
-
-#: How far back "recent activity on this host" reaches for the repeat factor.
-#: Longer than a correlation window on purpose: correlation asks whether two
-#: things are the same incident, this asks whether a host has been noisy.
-REPEAT_WINDOW_HOURS = 24
 
 
 @dataclass
@@ -121,13 +116,15 @@ class TriagePipeline:
             indicators[event.event_id] = extraction.indicators
             result.indicators_found += len(extraction.indicators)
 
-        # 2. Detection - threshold rules need the whole batch, not one event.
-        run = self.engine.evaluate_events(events)
+        # 2. Detection. Threshold rules also see what earlier runs saw, so a
+        #    burst is one burst however the events happened to be batched.
+        run = self.engine.evaluate_events(events, history=self._threshold_history(events))
         result.detections = run.detection_count
         result.rule_counts = run.by_rule()
 
-        # 3. Prior activity, for the repeat factor.
-        prior = self._prior_alert_counts(events) if persist else {}
+        # 3. Earlier alerts on the same host, for the repeat factor. A dry run
+        #    reads the same history, so it shows what triage would do.
+        prior = self._prior_alert_counts(events, run)
 
         # 4. Mapping, scoring and assembly.
         built = self.factory.build_alerts(run, events, indicators=indicators, prior_alerts=prior)
@@ -149,17 +146,65 @@ class TriagePipeline:
         return self.process(pending, persist=persist)
 
     # ------------------------------------------------------------------
-    def _prior_alert_counts(self, events: Sequence[SecurityEvent]) -> dict[str, int]:
-        """How many alerts each host already has in the recent window."""
-        counts: dict[str, int] = {}
-        for event in events:
-            key = event.hostname_key
-            if not key or key in counts:
-                continue
-            counts[key] = repository.count_recent_alerts_for_host(
-                self.session, key, since=event.timestamp - timedelta(hours=REPEAT_WINDOW_HOURS)
+    def _threshold_history(self, events: Sequence[SecurityEvent]) -> ThresholdHistory:
+        """The stored events and firings a threshold rule's window reaches back to."""
+        rules = self.engine.threshold_rules
+        windows = [rule.threshold.within_minutes for rule in rules if rule.threshold is not None]
+        if not windows:
+            return ThresholdHistory()
+        since = min(event.timestamp for event in events) - timedelta(minutes=max(windows))
+        until = max(event.timestamp for event in events)
+        # Only the kinds of event some threshold rule counts, unless one of
+        # them counts every kind.
+        kinds: set[EventType] | None = {
+            kind for rule in rules for kind in rule.detection.event_types
+        }
+        if any(not rule.detection.event_types for rule in rules):
+            kinds = None
+        batch = {event.event_id for event in events}
+        earlier = [
+            event
+            for event in repository.triaged_events_between(
+                self.session, since=since, until=until, event_types=kinds
             )
-        return counts
+            if event.event_id not in batch
+        ]
+        triggers = repository.detection_triggers(
+            self.session, [rule.rule_id for rule in rules], since=since, until=until
+        )
+        return ThresholdHistory(events=earlier, triggers=triggers)
+
+    def _prior_alert_counts(
+        self, events: Sequence[SecurityEvent], run: DetectionRun
+    ) -> dict[UUID, int]:
+        """event_id -> alerts on the same host in the window before that event.
+
+        Counted per event, over stored alerts and the alerts this batch is about
+        to create alike, and only those strictly earlier. So the count is the
+        same whether the events arrived together or one at a time.
+        """
+        hosts = {event.hostname_key for event in events if event.hostname_key}
+        if not hosts:
+            return {}
+        window = timedelta(hours=REPEAT_WINDOW_HOURS)
+        times = repository.alert_times_by_host(
+            self.session,
+            hosts,
+            since=min(event.timestamp for event in events) - window,
+            until=max(event.timestamp for event in events),
+        )
+        for event in events:  # the alerts this batch will create
+            if event.hostname_key and run.results.get(event.event_id):
+                times.setdefault(event.hostname_key, []).append(event.timestamp)
+        return {
+            event.event_id: sum(
+                1
+                for moment in times.get(event.hostname_key, ())
+                if event.timestamp - window <= moment < event.timestamp
+            )
+            for event in events
+            if event.hostname_key
+        }
 
     def _persist(self, alerts: Sequence[Alert]) -> None:
         """Store alerts and record their creation in the audit trail."""

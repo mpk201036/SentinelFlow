@@ -32,7 +32,7 @@ from app import __version__
 from app.core.display import audit_label, audit_summary, audit_who
 from app.enrichment.defang import defang_text
 from app.models.ai import AIAnalysis
-from app.reports.markdown import indicator_display, indicator_scope
+from app.reports.markdown import indicator_display, indicator_scope_label
 from app.reports.model import Report
 
 TEMPLATE_DIR = Path(__file__).parent / "templates"
@@ -57,7 +57,7 @@ def _environment() -> Environment:
         {
             "defang": lambda value: defang_text(str(value)),
             "indicator_display": indicator_display,
-            "indicator_scope": indicator_scope,
+            "indicator_scope": indicator_scope_label,
             "audit_who": audit_who,
             "audit_label": audit_label,
             "audit_summary": audit_summary,

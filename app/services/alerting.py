@@ -121,9 +121,13 @@ class AlertFactory:
         events: Sequence[SecurityEvent],
         *,
         indicators: Mapping[UUID, Sequence[Indicator]] | None = None,
-        prior_alerts: Mapping[str, int] | None = None,
+        prior_alerts: Mapping[UUID, int] | None = None,
     ) -> AlertBuildResult:
-        """Build one alert per event that something fired on."""
+        """Build one alert per event that something fired on.
+
+        ``prior_alerts`` maps an event to the alerts already on its host in the
+        window before it, for the repeat-activity factor.
+        """
         by_id = {event.event_id: event for event in events}
         result = AlertBuildResult()
 
@@ -131,9 +135,7 @@ class AlertFactory:
             event = by_id.get(event_id)
             if event is None or not detections:
                 continue
-            prior = 0
-            if prior_alerts is not None and event.hostname_key:
-                prior = prior_alerts.get(event.hostname_key, 0)
+            prior = (prior_alerts or {}).get(event_id, 0)
             alert, unknown = self.build_alert(
                 event=event,
                 detections=detections,

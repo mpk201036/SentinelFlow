@@ -16,6 +16,7 @@ from app.detection import (
     DetectionEngine,
     Logic,
     RuleDefinition,
+    ThresholdHistory,
     available_operators,
     evaluate_condition,
     evaluate_logic,
@@ -279,51 +280,53 @@ class TestEngine:
 # ---------------------------------------------------------------------------
 # Threshold rules
 # ---------------------------------------------------------------------------
-class TestThresholdRules:
-    def _failures(self, count: int, *, gap_seconds: int = 30, user: str = "lab-user") -> list:
-        start = datetime(2026, 9, 23, 13, 0, tzinfo=UTC)
-        return [
-            event(
-                event_type="authentication_failure",
-                username=user,
-                timestamp=start + timedelta(seconds=gap_seconds * index),
-            )
-            for index in range(count)
-        ]
-
-    def _rule(self, **threshold: object):
-        spec = {"count": 5, "within_minutes": 10, "group_by": ["hostname_key", "username_key"]}
-        spec.update(threshold)
-        return rule(
-            detection={"event_types": ["authentication_failure"]},
-            threshold=spec,
+def _failures(count: int, *, gap_seconds: int = 30, user: str = "lab-user") -> list:
+    start = datetime(2026, 9, 23, 13, 0, tzinfo=UTC)
+    return [
+        event(
+            event_type="authentication_failure",
+            username=user,
+            timestamp=start + timedelta(seconds=gap_seconds * index),
         )
+        for index in range(count)
+    ]
 
+
+def _threshold_rule(**threshold: object):
+    spec = {"count": 5, "within_minutes": 10, "group_by": ["hostname_key", "username_key"]}
+    spec.update(threshold)
+    return rule(
+        detection={"event_types": ["authentication_failure"]},
+        threshold=spec,
+    )
+
+
+class TestThresholdRules:
     def test_below_the_threshold_nothing_fires(self) -> None:
-        run = DetectionEngine([self._rule()]).evaluate_events(self._failures(4))
+        run = DetectionEngine([_threshold_rule()]).evaluate_events(_failures(4))
         assert run.detection_count == 0
 
     def test_at_the_threshold_one_detection_fires(self) -> None:
-        run = DetectionEngine([self._rule()]).evaluate_events(self._failures(5))
+        run = DetectionEngine([_threshold_rule()]).evaluate_events(_failures(5))
         assert run.detection_count == 1
 
     def test_a_burst_produces_one_detection_not_one_per_event(self) -> None:
         """An analyst wants to know a burst happened, not receive nine alerts."""
-        run = DetectionEngine([self._rule()]).evaluate_events(self._failures(9))
+        run = DetectionEngine([_threshold_rule()]).evaluate_events(_failures(9))
         assert run.detection_count == 1
 
     def test_two_separate_bursts_produce_two_detections(self) -> None:
-        run = DetectionEngine([self._rule()]).evaluate_events(self._failures(10))
+        run = DetectionEngine([_threshold_rule()]).evaluate_events(_failures(10))
         assert run.detection_count == 2
 
     def test_events_outside_the_window_do_not_accumulate(self) -> None:
         """Five failures over five hours is not a brute-force attempt."""
-        spread = self._failures(5, gap_seconds=3_600)
-        assert DetectionEngine([self._rule()]).evaluate_events(spread).detection_count == 0
+        spread = _failures(5, gap_seconds=3_600)
+        assert DetectionEngine([_threshold_rule()]).evaluate_events(spread).detection_count == 0
 
     def test_counting_is_grouped_by_key(self) -> None:
-        mixed = self._failures(4, user="alice") + self._failures(4, user="bob")
-        assert DetectionEngine([self._rule()]).evaluate_events(mixed).detection_count == 0
+        mixed = _failures(4, user="alice") + _failures(4, user="bob")
+        assert DetectionEngine([_threshold_rule()]).evaluate_events(mixed).detection_count == 0
 
     def test_events_missing_a_group_key_are_not_counted(self) -> None:
         """Activity that cannot be attributed must not be counted as if it could."""
@@ -337,18 +340,63 @@ class TestThresholdRules:
             )
             for index in range(8)
         ]
-        assert DetectionEngine([self._rule()]).evaluate_events(anonymous).detection_count == 0
+        assert DetectionEngine([_threshold_rule()]).evaluate_events(anonymous).detection_count == 0
 
     def test_the_detection_records_the_count_and_the_window(self) -> None:
-        run = DetectionEngine([self._rule()]).evaluate_events(self._failures(6))
+        run = DetectionEngine([_threshold_rule()]).evaluate_events(_failures(6))
         evidence = run.all_results()[0].matched
         assert "5 events" in (evidence[0].observed_value or "")
         assert "to" in (evidence[1].observed_value or "")
 
     def test_the_detection_is_anchored_on_a_real_event(self) -> None:
-        failures = self._failures(6)
-        run = DetectionEngine([self._rule()]).evaluate_events(failures)
+        failures = _failures(6)
+        run = DetectionEngine([_threshold_rule()]).evaluate_events(failures)
         assert run.all_results()[0].event_id in {e.event_id for e in failures}
+
+
+class TestThresholdAcrossBatches:
+    """Stage 17: a burst is one burst, whichever triage runs its events fell into."""
+
+    def _fire(
+        self,
+        batch: list[SecurityEvent],
+        *,
+        events: list[SecurityEvent] | None = None,
+        triggers: dict[str, list[SecurityEvent]] | None = None,
+    ) -> list:
+        history = ThresholdHistory(events=events or [], triggers=triggers or {})
+        run = DetectionEngine([_threshold_rule()]).evaluate_events(batch, history=history)
+        return [result.event_id for result in run.all_results()]
+
+    def test_earlier_events_count_towards_the_burst(self) -> None:
+        failures = _failures(5)
+        assert self._fire(failures[4:], events=failures[:4]) == [failures[4].event_id]
+
+    def test_an_earlier_event_is_never_fired_on_again(self) -> None:
+        """It was triaged already; only the batch can raise something new."""
+        failures = _failures(5)
+        assert self._fire([], events=failures) == []
+
+    def test_a_burst_that_already_fired_does_not_fire_again(self) -> None:
+        failures = _failures(7)
+        fired = {_threshold_rule().rule_id: [failures[4]]}
+        assert self._fire(failures[5:], events=failures[:5], triggers=fired) == []
+
+    def test_counting_restarts_after_the_last_firing(self) -> None:
+        """Ten failures fire twice in one batch, and twice split five and five."""
+        failures = _failures(10)
+        fired = {_threshold_rule().rule_id: [failures[4]]}
+        assert self._fire(failures[5:], events=failures[:5], triggers=fired) == [
+            failures[9].event_id
+        ]
+
+    def test_earlier_events_outside_the_window_do_not_count(self) -> None:
+        failures = _failures(5, gap_seconds=180)  # twelve minutes end to end
+        assert self._fire(failures[4:], events=failures[:4]) == []
+
+    def test_earlier_events_in_another_group_do_not_count(self) -> None:
+        alice, bob = _failures(4, user="alice"), _failures(1, user="bob")
+        assert self._fire(bob, events=alice) == []
 
 
 class TestDetectionRun:

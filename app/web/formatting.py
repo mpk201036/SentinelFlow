@@ -13,7 +13,7 @@ import json
 from datetime import datetime
 from typing import Any
 
-from app.core.display import audit_change, audit_label, audit_subject, humanise
+from app.core.display import audit_change, audit_label, audit_subject, counted, humanise
 from app.models.base import utcnow
 
 
@@ -58,6 +58,7 @@ FILTERS = {
     "ts": timestamp,
     "ago": ago,
     "compact": compact,
+    "counted": counted,
     "pretty_json": pretty_json,
     "humanise": humanise,
     "audit_label": audit_label,

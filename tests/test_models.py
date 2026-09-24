@@ -113,6 +113,25 @@ class TestIndicator:
             Indicator(indicator_type=IndicatorType.DOMAIN, value="a.example").is_internal is False
         )
 
+    @pytest.mark.parametrize(
+        ("kind", "value", "external"),
+        [
+            (IndicatorType.IPV4, "192.0.2.77", True),
+            (IndicatorType.IPV4, "10.0.0.5", False),
+            (IndicatorType.DOMAIN, "updates.example", True),
+            (IndicatorType.URL, "https://updates.example/a", True),
+            # Neither inside nor outside anything: Stage 17 found a report
+            # counting these as "external".
+            (IndicatorType.SHA256, "b2" * 32, False),
+            (IndicatorType.PROCESS_NAME, "powershell.exe", False),
+            (IndicatorType.FILE_PATH, "C:\\Users\\lab-user\\update.exe", False),
+        ],
+    )
+    def test_only_a_network_indicator_can_be_external(
+        self, kind: IndicatorType, value: str, external: bool
+    ) -> None:
+        assert Indicator(indicator_type=kind, value=value).is_external is external
+
     def test_merging_extends_the_sighting_window(self) -> None:
         now = utcnow()
         first = Indicator(

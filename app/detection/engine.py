@@ -13,8 +13,9 @@ cannot produce a reproducible one.
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
+from datetime import datetime
 from typing import Any
 from uuid import UUID
 
@@ -29,6 +30,24 @@ logger = get_logger(__name__)
 
 #: Observed values are truncated in the evidence, which is read by a human.
 MAX_OBSERVED_LENGTH = 512
+
+
+@dataclass(frozen=True)
+class ThresholdHistory:
+    """What earlier triage runs saw, so a burst split across batches is one burst.
+
+    A threshold rule counts events across a window. Evaluated over one batch
+    only, it depends on where the batch boundaries fall: eight failed logons
+    triaged together fired, and the same eight triaged as they arrived never
+    did. With the history, a batch is judged as if everything before it had
+    arrived with it.
+    """
+
+    #: Already-triaged events from the window before the batch.
+    events: Sequence[SecurityEvent] = ()
+    #: rule_id -> the events that rule has already fired on, which is where
+    #: its count restarts.
+    triggers: Mapping[str, Sequence[SecurityEvent]] = field(default_factory=dict)
 
 
 @dataclass
@@ -174,21 +193,42 @@ class DetectionEngine:
             results.append(_result(rule, event.event_id, evidence))
         return results
 
-    def evaluate_events(self, events: Sequence[SecurityEvent]) -> DetectionRun:
-        """Run every rule, including the ones that count across events."""
+    def evaluate_events(
+        self, events: Sequence[SecurityEvent], *, history: ThresholdHistory | None = None
+    ) -> DetectionRun:
+        """Run every rule, including the ones that count across events.
+
+        Without ``history`` a threshold rule sees this batch alone. The triage
+        pipeline always passes it; a dry run over stored events need not.
+        """
         run = DetectionRun(events_evaluated=len(events), rules_evaluated=len(self.rules))
         for event in events:
             run.add(event.event_id, self.evaluate_event(event))
+        history = history or ThresholdHistory()
         for rule in self.threshold_rules:
-            for event_id, result in self._evaluate_threshold(rule, events):
+            for event_id, result in self._evaluate_threshold(
+                rule, events, earlier=history.events, fired=history.triggers.get(rule.rule_id, ())
+            ):
                 run.add(event_id, [result])
         if run.detection_count:
             logger.info("detection run: %s", run.summary())
         return run
 
     # ------------------------------------------------------------------
+    def threshold_key(self, rule: RuleDefinition, event: SecurityEvent) -> tuple[str, ...] | None:
+        """The group an event counts towards, or ``None`` if it cannot be attributed."""
+        if rule.threshold is None:
+            return None
+        key = tuple(str(resolve_field(event, name) or "") for name in rule.threshold.group_by)
+        return None if any(not part for part in key) else key
+
     def _evaluate_threshold(
-        self, rule: RuleDefinition, events: Sequence[SecurityEvent]
+        self,
+        rule: RuleDefinition,
+        events: Sequence[SecurityEvent],
+        *,
+        earlier: Sequence[SecurityEvent] = (),
+        fired: Sequence[SecurityEvent] = (),
     ) -> list[tuple[UUID, DetectionResult]]:
         """Count matching events per group within a sliding time window.
 
@@ -196,22 +236,43 @@ class DetectionEngine:
         eleven failures with a threshold of five produce two detections, not
         seven — an analyst wants to know a burst happened, not receive one alert
         per event in it.
+
+        ``earlier`` events count towards a burst but are never fired on: they
+        were triaged already. Counting restarts after the last event in
+        ``fired`` for the same group, exactly as it would have in one batch.
         """
         if rule.threshold is None:
             raise ValueError(f"rule {rule.rule_id} is not a threshold rule")
         spec = rule.threshold
         window = spec.within_minutes * 60
 
+        restart: dict[tuple[str, ...], datetime] = {}
+        for event in fired:
+            fired_key = self.threshold_key(rule, event)
+            if fired_key is not None and (
+                fired_key not in restart or event.timestamp > restart[fired_key]
+            ):
+                restart[fired_key] = event.timestamp
+
+        in_batch = {event.event_id for event in events}
         grouped: dict[tuple[str, ...], list[SecurityEvent]] = {}
-        for event in events:
+        # Earlier events first, so at an equal timestamp they sort before the
+        # batch, as they would have in the order they arrived.
+        for event in [*earlier, *events]:
             if evaluate_logic(rule.detection, event) is None:
                 continue
-            key = tuple(str(resolve_field(event, name) or "") for name in spec.group_by)
-            if any(not part for part in key):
+            key = self.threshold_key(rule, event)
+            if key is None:
                 continue  # cannot attribute the activity; counting it would be a guess
+            if (
+                event.event_id not in in_batch
+                and key in restart
+                and event.timestamp <= restart[key]
+            ):
+                continue  # already part of a burst that fired
             grouped.setdefault(key, []).append(event)
 
-        fired: list[tuple[UUID, DetectionResult]] = []
+        fired_now: list[tuple[UUID, DetectionResult]] = []
         for key, members in grouped.items():
             ordered = sorted(members, key=lambda item: item.timestamp)
             start = 0
@@ -236,9 +297,10 @@ class DetectionEngine:
                         ),
                     ),
                 ]
-                fired.append((event.event_id, _result(rule, event.event_id, evidence)))
+                if event.event_id in in_batch:
+                    fired_now.append((event.event_id, _result(rule, event.event_id, evidence)))
                 start = index + 1  # reset, so one burst produces one detection
-        return fired
+        return fired_now
 
 
 def _result(

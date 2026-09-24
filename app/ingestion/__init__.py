@@ -18,6 +18,7 @@ from app.ingestion.adapters import (
 )
 from app.ingestion.generator import (
     GeneratedRecord,
+    demo_base_time,
     generate_dataset,
     generate_demo_scenario,
     generate_normal_activity,
@@ -35,6 +36,7 @@ __all__ = [
     "SourceAdapter",
     "UnknownAdapterError",
     "adapter_names",
+    "demo_base_time",
     "detect_adapter",
     "generate_dataset",
     "generate_demo_scenario",

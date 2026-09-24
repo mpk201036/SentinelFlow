@@ -204,9 +204,15 @@ class TestIncidentDescription:
     def test_no_compromise_is_asserted(self) -> None:
         """The wording is the claim, and the claim must stay modest."""
         incident = CorrelationEngine(30).build_incident(self._group())
-        assert "no compromise is asserted" in (incident.summary or "")
         for word in ("compromised", "breach", "attacker"):
             assert word not in (incident.summary or "").lower()
+
+    def test_the_summary_states_no_status(self) -> None:
+        """Stage 17: it is written once, so a status in it goes stale. It said
+        "awaiting analyst review" on an incident an analyst had confirmed."""
+        summary = (CorrelationEngine(30).build_incident(self._group()).summary or "").lower()
+        for status_word in ("potential", "awaiting", "review", "confirmed", "dismissed"):
+            assert status_word not in summary
 
     def test_severity_is_the_highest_member_not_a_new_number(self) -> None:
         """Correlation does not invent a third scoring system."""

@@ -7,6 +7,11 @@ through two fresh databases, and everything deterministic must match: scores,
 every factor and its wording, rules, ATT&CK mappings and their reasons,
 indicators, and how alerts were grouped into investigations.
 
+Stage 17 added the case the first version missed: the same events arriving as
+a feed, triaged a few at a time. Triaged one by one, the brute-force rule never
+fired and later alerts scored up to 20 points differently, because threshold
+rules and the repeat-activity factor only looked inside the current batch.
+
 IDs are random by design, so records are compared by what they are about
 (the event behind them), never by ID.
 """
@@ -63,8 +68,12 @@ def _event_key(event: Any) -> tuple[str, ...]:
     )
 
 
-def _run(session: Session, settings: Settings) -> dict[str, Any]:
-    """Ingest, triage and correlate the dataset; return every deterministic result."""
+def _run(session: Session, settings: Settings, *, batch: int | None = None) -> dict[str, Any]:
+    """Ingest, triage and correlate the dataset; return every deterministic result.
+
+    With ``batch``, events are triaged that many at a time, oldest first, and
+    correlated after each batch: a feed, rather than one import.
+    """
     records = generate_dataset(normal_count=60, seed=1337, base_time=BASE_TIME)
     events = [get_adapter(record.adapter).normalise(record.record) for record in records]
     repository.save_events(session, events)
@@ -73,8 +82,14 @@ def _run(session: Session, settings: Settings) -> dict[str, Any]:
     for sample in sorted(SAMPLES.glob("*")):
         if sample.suffix in (".json", ".csv") and sample.name != "malformed.json":
             service.ingest_file(sample, allowed_roots=[SAMPLES])
-    TriagePipeline(session, settings).process_stored()
-    CorrelationService(session, settings).correlate_pending()
+    pipeline = TriagePipeline(session, settings)
+    correlation = CorrelationService(session, settings)
+    if batch is None:
+        pipeline.process_stored()
+        correlation.correlate_pending()
+    else:
+        while pipeline.process_stored(limit=batch).events_processed:
+            correlation.correlate_pending()
     session.commit()
 
     alerts: dict[tuple[str, ...], Any] = {}
@@ -140,3 +155,17 @@ def test_running_the_pipeline_again_changes_nothing() -> None:
         session.commit()
         assert repository.count_alerts(session) == len(before["alerts"])
         assert repository.count_incidents(session) == len(before["incidents"])
+
+
+@pytest.mark.parametrize("batch", [1, 5, 13])
+def test_a_feed_gives_the_same_verdicts_as_one_import(batch: int) -> None:
+    """Where the batch boundaries fall must not change what fires or how it scores."""
+    with _fresh() as (session, settings):
+        whole = _run(session, settings)
+    with _fresh() as (session, settings):
+        fed = _run(session, settings, batch=batch)
+
+    assert whole["alerts"].keys() == fed["alerts"].keys()
+    for key, result in whole["alerts"].items():
+        assert fed["alerts"][key] == result, key
+    assert whole["incidents"] == fed["incidents"]

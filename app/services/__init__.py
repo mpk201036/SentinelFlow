@@ -17,9 +17,10 @@ from app.services.correlation import (
     Signal,
     signals_for,
 )
-from app.services.pipeline import REPEAT_WINDOW_HOURS, TriagePipeline, TriageResult
+from app.services.pipeline import TriagePipeline, TriageResult
 from app.services.severity import (
     FACTOR_NAMES,
+    REPEAT_WINDOW_HOURS,
     SeverityEngine,
     SeverityWeights,
     describe_scale,

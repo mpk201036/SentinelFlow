@@ -136,7 +136,7 @@ threshold:
   group_by: [hostname_key, username_key]
 ```
 
-Three behaviours worth knowing:
+Four behaviours worth knowing:
 
 * **A burst fires once.** After the threshold is reached the window resets, so
   nine failures produce one detection, not five. An analyst wants to know a
@@ -146,6 +146,12 @@ Three behaviours worth knowing:
 * **Events missing a group key are not counted.** Activity that cannot be
   attributed to a host and account must not be counted as if it could — that
   would be a guess wearing a number.
+* **A burst is the same burst however its events arrive.** Triage also counts
+  events an earlier run has already seen, and a count restarts after the rule's
+  last detection for that group, so eight failures triaged one at a time fire
+  exactly as they would in one import. Until Stage 17 the rule counted within
+  the current batch only, and a brute force arriving one API call at a time
+  never fired at all.
 
 ## Every detection shows its working
 

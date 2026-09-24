@@ -7,6 +7,7 @@ to start, because it looks like coverage.
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import pytest
@@ -314,6 +315,15 @@ class TestShippedRules:
         for rule in shipped.rules:
             assert rule.recommendation, f"{rule.rule_id} has no recommendation"
             assert len(rule.description) >= 60, f"{rule.rule_id} description is too thin"
+
+    def test_no_yaml_comment_leaked_into_what_an_analyst_reads(self, shipped) -> None:
+        """Inside a folded block, ``#`` is text, not a comment. Stage 17 found an
+        author's note to other authors printed in SF-0010's description, on
+        every alert page and in every report."""
+        comment = re.compile(r"(?:^|\s)#(?:\s|$)")
+        for rule in shipped.rules:
+            for text in [rule.description, rule.recommendation or "", *rule.false_positives]:
+                assert not comment.search(text), f"{rule.rule_id}: {text[:80]}"
 
     def test_every_rule_admits_its_false_positives(self, shipped) -> None:
         """A rule that claims none is a rule nobody has run in production."""

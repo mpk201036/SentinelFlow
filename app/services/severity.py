@@ -28,6 +28,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime
 
+from app.core.display import counted
 from app.core.logging import get_logger
 from app.models.alert import AlertSeverity, SeverityFactor
 from app.models.detection import DetectionResult
@@ -39,12 +40,14 @@ from app.services.context import EnvironmentContext, get_context
 logger = get_logger(__name__)
 
 #: Indicator types that describe something outside the estate.
-NETWORK_INDICATORS = frozenset(
-    {IndicatorType.IPV4, IndicatorType.IPV6, IndicatorType.DOMAIN, IndicatorType.URL}
-)
 
 #: Every factor this engine can produce. Used by the tests to assert that
 #: nothing outside this vocabulary ever reaches an alert's severity.
+#: How far back "earlier activity on this host" reaches for the repeat factor.
+#: Longer than a correlation window on purpose: correlation asks whether two
+#: things are the same incident, this asks whether a host has been noisy.
+REPEAT_WINDOW_HOURS = 24
+
 FACTOR_NAMES = frozenset(
     {
         "rule_severity",
@@ -250,11 +253,7 @@ class SeverityEngine:
 
     def _external_indicators(self, indicators: Sequence[Indicator]) -> list[SeverityFactor]:
         """Breadth of external infrastructure touched."""
-        external = {
-            indicator.value
-            for indicator in indicators
-            if indicator.indicator_type in NETWORK_INDICATORS and not indicator.is_internal
-        }
+        external = {indicator.value for indicator in indicators if indicator.is_external}
         if not external:
             return []
         points = min(
@@ -266,7 +265,7 @@ class SeverityEngine:
             SeverityFactor(
                 name="external_indicators",
                 points=points,
-                detail=f"{len(external)} external indicator(s) observed: {listed}",
+                detail=f"{counted(len(external), 'external indicator')} observed: {listed}",
             )
         ]
 
@@ -283,7 +282,7 @@ class SeverityEngine:
         ]
 
     def _repeat_activity(self, prior_alerts: int) -> list[SeverityFactor]:
-        """Recent alerts on the same host or account raise the stakes."""
+        """Earlier alerts on the same host raise the stakes."""
         if prior_alerts <= 0:
             return []
         points = min(
@@ -293,7 +292,10 @@ class SeverityEngine:
             SeverityFactor(
                 name="repeat_activity",
                 points=points,
-                detail=(f"{prior_alerts} recent alert(s) already involve this host or account"),
+                detail=(
+                    f"{counted(prior_alerts, 'earlier alert')} on this host in the "
+                    f"{REPEAT_WINDOW_HOURS} hours before this activity"
+                ),
             )
         ]
 

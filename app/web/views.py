@@ -13,6 +13,7 @@ clearly set apart - the model's suggestion, then the analyst's own decision.
 
 from __future__ import annotations
 
+import hashlib
 import re
 from typing import Any
 from uuid import UUID
@@ -37,8 +38,22 @@ from app.web.formatting import FILTERS
 TEMPLATE_DIR = PROJECT_ROOT / "dashboard" / "templates"
 STATIC_DIR = PROJECT_ROOT / "dashboard" / "static"
 
+
+def _asset_version() -> str:
+    """A fingerprint of the stylesheet and script, appended to their URLs.
+
+    Without it a browser keeps serving the old console.css after an upgrade
+    until its cache happens to expire, and the console looks broken.
+    """
+    digest = hashlib.sha256()
+    for name in ("console.css", "console.js"):
+        digest.update((STATIC_DIR / name).read_bytes())
+    return digest.hexdigest()[:12]
+
+
 templates = Jinja2Templates(directory=str(TEMPLATE_DIR))
 templates.env.filters.update(FILTERS)
+templates.env.globals["asset_version"] = _asset_version()
 # Belt and braces: Jinja2Templates enables autoescaping for .html already, but
 # the console renders attacker-controlled strings on every page, so the setting
 # is asserted rather than assumed. A test checks it too.

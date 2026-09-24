@@ -55,7 +55,10 @@ class TestEvidence:
         alert, evidence = _evidence(db_session, db_settings)
         keys = _keys(evidence.document)
         assert not keys & {"severity", "score", "factors", "severity_score", "rule_severity"}
-        assert alert.severity_level.value not in json.dumps(evidence.document["alert"])
+        # "rule_confidence" is the rules' own low/medium/high, a different
+        # scale that can share a word with the severity band. Nothing else may.
+        shown = {k: v for k, v in evidence.document["alert"].items() if k != "rule_confidence"}
+        assert alert.severity_level.value not in json.dumps(shown)
 
     def test_raw_event_is_not_sent(self, db_session: Session, db_settings: Settings) -> None:
         _, evidence = _evidence(db_session, db_settings)

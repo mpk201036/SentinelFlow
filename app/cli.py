@@ -29,7 +29,13 @@ from app.database.session import get_engine, session_scope
 from app.database.tables import SCHEMA_VERSION
 from app.detection import DetectionEngine, load_rules, rules_by_technique
 from app.enrichment import EnrichmentService
-from app.ingestion import IngestionService, generate_dataset, group_by_adapter, list_adapters
+from app.ingestion import (
+    IngestionService,
+    demo_base_time,
+    generate_dataset,
+    group_by_adapter,
+    list_adapters,
+)
 from app.ingestion.service import IngestionOutcome
 from app.mitre import MitreMapper, load_catalogue, tactic_coverage, validate_rule_techniques
 from app.models.enums import (
@@ -408,7 +414,9 @@ def generate(
     """Write synthetic sample datasets, one file per source."""
     import json as _json
 
-    records = generate_dataset(normal_count=normal, include_scenario=scenario, seed=seed)
+    records = generate_dataset(
+        normal_count=normal, include_scenario=scenario, seed=seed, base_time=demo_base_time()
+    )
     grouped = group_by_adapter(records)
     out.mkdir(parents=True, exist_ok=True)
 
@@ -427,11 +435,15 @@ def generate(
 
 @app.command()
 def demo(
-    force: bool = typer.Option(False, "--force", help="Import again even if already seen."),
+    force: bool = typer.Option(
+        False, "--force", help="Add another copy even if the demo data is already here."
+    ),
 ) -> None:
-    """Generate the demonstration dataset and ingest it in one step."""
+    """Generate the demonstration dataset, then ingest, triage and correlate it."""
     configure_logging()
     settings = get_settings()
+    from app.database import repository
+
     # The demo is the first thing a newcomer runs, so on a database that does
     # not exist yet it creates one. An existing database, at any version, is
     # never changed here: migrating is init-db's decision.
@@ -441,11 +453,22 @@ def demo(
         console.print(
             f"[green]Created a new database[/green] [dim]{_u(settings.database_url)}[/dim]"
         )
-    grouped = group_by_adapter(generate_dataset())
+    grouped = group_by_adapter(generate_dataset(base_time=demo_base_time()))
 
     outcomes: list[IngestionOutcome] = []
     ingested: list[Any] = []
     with _session(settings) as session:
+        # The scenario is dated from now, so a second run is never a byte-for-byte
+        # duplicate: it would add a second copy of the attack to the same
+        # investigation. Running the demo twice to check it worked is natural.
+        earlier = repository.first_batch_from(session, "demo:")
+        if earlier is not None and not force:
+            console.print(
+                "[yellow]The demo data is already in this database[/yellow] "
+                f"[dim](imported {earlier.imported_at:%Y-%m-%d %H:%M} UTC)[/dim].\n"
+                "See it with: sentinelflow incidents. Pass --force to add another copy."
+            )
+            return
         service = IngestionService(session, settings)
         for adapter_name, records in sorted(grouped.items()):
             outcome = service.ingest_mappings(
@@ -467,15 +490,38 @@ def demo(
     console.print(f"[green]{counted(sum(o.accepted for o in outcomes), 'event')} ingested.[/green]")
     console.print(f"[green]{triage.summary()}[/green]")
     if triage.alerts:
-        console.print(f"[bold]Severity:[/bold] {triage.severity_counts()}")
+        bands = triage.severity_counts()
+        console.print(
+            "[bold]Severity:[/bold] "
+            + ", ".join(
+                f"{bands[level.value]} {level.value}"
+                for level in reversed(Severity)
+                if bands.get(level.value)
+            )
+        )
     if correlation.incident_count:
         console.print(f"[green]{correlation.summary()}[/green]")
         for incident in correlation.created:
             console.print(
-                f"  [bold]{incident.display_label}:[/bold] {incident.title} "
-                f"[dim]({incident.alert_count} alerts)[/dim]"
+                f"  [bold]{incident.display_label}:[/bold] {_u(incident.title)} "
+                f"[dim]({counted(incident.alert_count, 'alert')})[/dim]"
             )
-    if triage.alerts:
+    if correlation.created:
+        first = correlation.created[0]
+        short = str(first.incident_id)[:8]
+        url = f"http://{settings.api_host}:{settings.api_port}/incidents/{first.incident_id}"
+        steps = Table.grid(padding=(0, 3))
+        steps.add_row(
+            f"  sentinelflow incident {short}", "[dim]the investigation and its timeline[/dim]"
+        )
+        steps.add_row(
+            "  sentinelflow serve", "[dim]then open the investigation in the console:[/dim]"
+        )
+        console.print("\n[bold]Next[/bold]")
+        console.print(steps)
+        console.print(f"    [cyan]{url}[/cyan]", soft_wrap=True)
+        console.print("  [dim]A guided walkthrough of this scenario: docs/demo-scenario.md[/dim]")
+    elif triage.alerts:
         console.print("[dim]Review them with: sentinelflow alerts / sentinelflow incidents[/dim]")
 
 
@@ -1241,7 +1287,7 @@ def incidents(
             _u(incident.title[:60]),
         )
     console.print(table)
-    console.print(f"[dim]{total} incident(s) total[/dim]")
+    console.print(f"[dim]{counted(total, 'incident')} total[/dim]")
 
 
 @app.command("incident")
