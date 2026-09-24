@@ -44,6 +44,12 @@ REQUIRED_FILES = [
     "SECURITY.md",
     "LICENSE",
     "Makefile",
+    "CHANGELOG.md",
+    "CONTRIBUTING.md",
+    "RELEASING.md",
+    "docs/images/overview.png",
+    "docs/images/alert-detail.png",
+    "docs/images/investigation-detail.png",
 ]
 
 

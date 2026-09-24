@@ -1,0 +1,27 @@
+name: Feature request
+description: Propose a focused improvement to SentinelFlow
+title: "[Feature]: "
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem to solve
+      description: Describe the analyst or engineering problem before the solution.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behavior
+    validations:
+      required: true
+  - type: textarea
+    id: trust
+    attributes:
+      label: Trust-boundary impact
+      description: Could this affect evidence, deterministic results, AI output, analyst decisions or stored history?
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered

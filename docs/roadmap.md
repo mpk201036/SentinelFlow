@@ -41,7 +41,7 @@ Legend: **Done** · *In progress* · Planned
 | 15 | Full test suite, integration tests, coverage | **Done** |
 | 16 | Documentation set | **Done** |
 | 17 | End-to-end demo scenario | **Done** |
-| 18 | Repository polish, screenshots, release | Planned |
+| 18 | Repository polish, screenshots, release | **Done** |
 
 ## Stage 1 — delivered
 
@@ -553,3 +553,34 @@ found these. Each has a regression test confirmed to fail without its fix.
   README says so. It now uses the newest supported interpreter it finds, and
   says so plainly when there is none
 
+## Stage 18 - delivered
+
+* Three real console screenshots from a clean demonstration database: the
+  overview, a critical alert and the correlated investigation. The README now
+  shows the product before asking a visitor to install it
+* `CHANGELOG.md`, `CONTRIBUTING.md`, `RELEASING.md`, structured issue forms and
+  a pull-request template, so contribution and release expectations live in
+  the repository rather than in one person's memory
+* Release packaging now includes the 15 rules, ATT&CK catalogue, environment
+  context, sample events, console templates and static assets. Runtime resource
+  lookup supports both a source checkout and an installed wheel, while writable
+  databases and logs remain outside the installation
+* A package job in CI builds and checks the distributions, installs the wheel
+  outside the checkout, then runs `doctor`, database setup and the full demo
+* A tag workflow verifies that `vX.Y.Z` matches the package version, repeats
+  the clean-wheel smoke test and publishes the wheel and source archive to a
+  GitHub Release. Package-index publication remains deliberately manual
+* `make build` and `make release-check` provide the same release gates locally
+
+### Defects found by Stage 18
+
+* **The wheel omitted almost every runtime resource.** Editable installs passed
+  because the rules, catalogue and dashboard remained in the checkout, but a
+  built wheel had only Python modules and report templates. A clean installed
+  copy could not load rules, ATT&CK data, samples or the web console. Those
+  resources now ship under `share/sentinelflow`, and CI runs the product away
+  from the source tree
+* **`sentinelflow doctor` failed before the first `init-db` in an installed
+  copy.** The default `data/` directory did not exist yet, even though the
+  database engine creates it safely. Doctor now checks the nearest existing
+  writable parent and reports that the directory will be created

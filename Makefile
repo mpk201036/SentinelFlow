@@ -10,7 +10,7 @@ VENV   := .venv
 BIN    := $(VENV)/bin
 
 .DEFAULT_GOAL := help
-.PHONY: help setup install lint format typecheck test test-fast test-cov fuzz check doctor clean
+.PHONY: help setup install lint format typecheck test test-fast test-cov fuzz check doctor build release-check clean
 
 help: ## Show available targets
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-12s\033[0m %s\n", $$1, $$2}'
@@ -53,6 +53,12 @@ test-cov: ## Run tests with a coverage report
 
 doctor: ## Verify the local environment
 	$(BIN)/sentinelflow doctor
+
+build: ## Build the source distribution and wheel
+	$(BIN)/python -m build
+
+release-check: check build ## Run CI checks, build, and validate release metadata
+	$(BIN)/python -m twine check dist/*
 
 clean: ## Remove caches and build artefacts
 	find . -type d -name __pycache__ -prune -exec rm -rf {} +

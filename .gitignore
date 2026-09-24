@@ -34,6 +34,7 @@ data/generated/
 logs/
 *.log
 reports/out/
+output/
 
 # --- Secrets: never commit real configuration ---
 .env

@@ -9,6 +9,7 @@ from pydantic import ValidationError
 
 from app.core.config import (
     PROJECT_ROOT,
+    RESOURCE_ROOT,
     AIProvider,
     Environment,
     LogFormat,
@@ -47,6 +48,7 @@ class TestDefaults:
 
     def test_derived_directories_resolve_under_project_root(self, settings: Settings) -> None:
         assert settings.project_root == PROJECT_ROOT
+        assert settings.resource_root == RESOURCE_ROOT
         assert settings.data_dir == PROJECT_ROOT / "data"
         assert settings.rules_dir == PROJECT_ROOT / "rules"
         assert settings.samples_dir == PROJECT_ROOT / "data" / "samples"

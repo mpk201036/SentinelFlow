@@ -1,0 +1,53 @@
+name: Bug report
+description: Report reproducible behavior that appears incorrect
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Do not include real logs, credentials, hostnames or customer data. For a security vulnerability, use the private reporting process in SECURITY.md.
+  - type: input
+    id: version
+    attributes:
+      label: SentinelFlow version
+      placeholder: Output of sentinelflow version
+    validations:
+      required: true
+  - type: dropdown
+    id: interface
+    attributes:
+      label: Interface
+      options:
+        - Web console
+        - CLI
+        - REST API
+        - Detection rule
+        - Packaging or installation
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Reproduction steps
+      description: Use synthetic or redacted data only.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Operating system, Python version, and relevant non-secret configuration.

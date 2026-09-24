@@ -25,7 +25,7 @@ from fastapi.templating import Jinja2Templates
 from app import __version__
 from app.api.dependencies import CatalogueDep, RulesDep, SessionDep, SettingsDep
 from app.api.reporting import report_response
-from app.core.config import PROJECT_ROOT
+from app.core.config import RESOURCE_ROOT
 from app.database import repository
 from app.models.ai import AIAnalysis
 from app.models.enums import AlertStatus, Classification, IncidentStatus, Severity
@@ -35,8 +35,8 @@ from app.services.workflow import Channel
 from app.web import charts, csrf
 from app.web.formatting import FILTERS
 
-TEMPLATE_DIR = PROJECT_ROOT / "dashboard" / "templates"
-STATIC_DIR = PROJECT_ROOT / "dashboard" / "static"
+TEMPLATE_DIR = RESOURCE_ROOT / "dashboard" / "templates"
+STATIC_DIR = RESOURCE_ROOT / "dashboard" / "static"
 
 
 def _asset_version() -> str:

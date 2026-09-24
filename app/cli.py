@@ -232,9 +232,9 @@ def doctor() -> None:
             failures += 1
             table.add_row(label, _FAIL, "not installed")
 
-    # --- Project layout -------------------------------------------------
-    for directory in ("rules", "data/samples", "data/mitre", "dashboard/templates", "tests"):
-        exists = (settings.project_root / directory).is_dir()
+    # --- Runtime resources ---------------------------------------------
+    for directory in ("rules", "data/samples", "data/mitre", "dashboard/templates"):
+        exists = (settings.resource_root / directory).is_dir()
         failures += 0 if exists else 1
         table.add_row(
             f"dir: {directory}", _OK if exists else _FAIL, "present" if exists else "missing"
@@ -299,7 +299,7 @@ def doctor() -> None:
 
 
 def _check_database_path(database_url: str) -> tuple[str, str]:
-    """Verify the SQLite parent directory exists and is writable."""
+    """Verify the SQLite parent directory exists or can be created."""
     prefix = "sqlite:///"
     if not database_url.startswith(prefix):
         return (f"non-SQLite URL configured: {database_url.split('://')[0]}://...", _OK)
@@ -308,7 +308,12 @@ def _check_database_path(database_url: str) -> tuple[str, str]:
         return ("in-memory database", _OK)
     parent = Path("/" + raw.lstrip("/")).parent if raw.startswith("/") else Path(raw).parent
     if not parent.exists():
-        return (f"{parent} does not exist", _FAIL)
+        ancestor = parent
+        while not ancestor.exists() and ancestor != ancestor.parent:
+            ancestor = ancestor.parent
+        if os.access(ancestor, os.W_OK):
+            return (f"{parent} will be created (under writable {ancestor})", _OK)
+        return (f"{parent} cannot be created under {ancestor}", _FAIL)
     if not os.access(parent, os.W_OK):
         return (f"{parent} is not writable", _FAIL)
     return (f"{parent} is writable", _OK)

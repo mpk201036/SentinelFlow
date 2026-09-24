@@ -15,9 +15,9 @@ Incidents**. An analyst reviews all of it in a web console, a CLI or a REST API.
 An **optional local AI** can be asked for a second opinion. It is clearly
 labelled, and it can never change a verdict.
 
-> **Status:** the system is complete, tested and walked through end to end.
-> Final repository polish is the one stage left;
-> [docs/roadmap.md](docs/roadmap.md) records every stage.
+> **Status:** version 0.1.0 is feature-complete, tested, documented and
+> release-ready. [docs/roadmap.md](docs/roadmap.md) records every stage and the
+> defects each stage uncovered.
 
 ## Quick start
 
@@ -46,6 +46,23 @@ Open the investigation, then its critical alerts.
 [docs/demo-scenario.md](docs/demo-scenario.md) walks through all of it: what
 fired and why, how the scores were reached, and the analyst's side, from the
 first decision to a verified report.
+
+## See the console
+
+The overview keeps the queue, serious-activity trend, rule coverage and ATT&CK
+breadth on one screen:
+
+![SentinelFlow overview showing nine alerts and one investigation](docs/images/overview.png)
+
+An alert separates the source evidence from the reproducible result. The score
+bar is followed by every factor that contributed:
+
+![Critical encoded PowerShell alert with Observed and Determined layers](docs/images/alert-detail.png)
+
+Correlation proposes a Potential Incident, explains every link and explicitly
+leaves confirmation to the analyst:
+
+![Potential Incident with a nine-alert timeline and correlation reasons](docs/images/investigation-detail.png)
 
 ## What to look at
 
@@ -191,6 +208,11 @@ pip install --upgrade pip
 pip install -e ".[dev]"
 sentinelflow doctor
 ```
+
+Tagged versions also produce a wheel and source archive on
+[GitHub Releases](https://github.com/mpk201036/SentinelFlow/releases). The
+release build installs the wheel outside the checkout and runs the full demo,
+so missing rules, templates or catalogue files fail before publication.
 
 ## Usage
 
@@ -452,6 +474,13 @@ including knowing where the boundaries are.
 | [docs/ai-safety.md](docs/ai-safety.md) | The optional model: threat model, defences, measured behaviour |
 | [docs/roadmap.md](docs/roadmap.md) | Build stages and current status |
 | [SECURITY.md](SECURITY.md) | Threat model, controls, and how to report a vulnerability |
+
+## Contributing and releases
+
+[CONTRIBUTING.md](CONTRIBUTING.md) explains the development workflow and the
+standard expected for rules, adapters, tests and documentation.
+[CHANGELOG.md](CHANGELOG.md) records user-visible changes, and
+[RELEASING.md](RELEASING.md) documents the checked tag-to-release process.
 
 ## Licence
 

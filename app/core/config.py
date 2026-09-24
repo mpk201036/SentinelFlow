@@ -20,6 +20,7 @@ Security notes
 
 from __future__ import annotations
 
+import sysconfig
 from enum import StrEnum
 from functools import lru_cache
 from pathlib import Path
@@ -28,8 +29,33 @@ from typing import Annotated, Any
 from pydantic import Field, computed_field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-# Project root = the directory containing `app/`, `rules/`, `data/`, ...
-PROJECT_ROOT: Path = Path(__file__).resolve().parents[2]
+# A source checkout keeps runtime resources beside ``app/``.  A wheel installs
+# the same files under ``share/sentinelflow``.  Keep writes (the SQLite database,
+# logs and reports) rooted in the checkout while developing, or in the user's
+# current directory for an installed command; packaged resources remain
+# read-only in either case.
+SOURCE_ROOT: Path = Path(__file__).resolve().parents[2]
+_IS_SOURCE_CHECKOUT = (SOURCE_ROOT / "pyproject.toml").is_file()
+PROJECT_ROOT: Path = SOURCE_ROOT if _IS_SOURCE_CHECKOUT else Path.cwd().resolve()
+
+
+def _resource_root() -> Path:
+    if _IS_SOURCE_CHECKOUT:
+        return SOURCE_ROOT
+
+    candidates = (
+        Path(sysconfig.get_path("data")) / "share" / "sentinelflow",
+        Path(__file__).resolve().parents[2] / "share" / "sentinelflow",
+    )
+    for candidate in candidates:
+        if (candidate / "rules").is_dir() and (candidate / "dashboard").is_dir():
+            return candidate
+    # Preserve the expected location in diagnostics when an installation is
+    # incomplete; ``doctor`` will name the missing directories clearly.
+    return candidates[0]
+
+
+RESOURCE_ROOT: Path = _resource_root()
 
 
 class Environment(StrEnum):
@@ -246,29 +272,35 @@ class Settings(BaseSettings):
 
     @computed_field  # type: ignore[prop-decorator]
     @property
+    def resource_root(self) -> Path:
+        """Read-only rules, catalogue, samples and console assets."""
+        return RESOURCE_ROOT
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
     def data_dir(self) -> Path:
         return PROJECT_ROOT / "data"
 
     @computed_field  # type: ignore[prop-decorator]
     @property
     def rules_dir(self) -> Path:
-        return PROJECT_ROOT / "rules"
+        return RESOURCE_ROOT / "rules"
 
     @computed_field  # type: ignore[prop-decorator]
     @property
     def samples_dir(self) -> Path:
-        return PROJECT_ROOT / "data" / "samples"
+        return RESOURCE_ROOT / "data" / "samples"
 
     @computed_field  # type: ignore[prop-decorator]
     @property
     def mitre_dir(self) -> Path:
-        return PROJECT_ROOT / "data" / "mitre"
+        return RESOURCE_ROOT / "data" / "mitre"
 
     @computed_field  # type: ignore[prop-decorator]
     @property
     def context_file(self) -> Path:
         """Environment context used by the severity engine."""
-        return PROJECT_ROOT / "data" / "context" / "environment.yaml"
+        return RESOURCE_ROOT / "data" / "context" / "environment.yaml"
 
     @computed_field  # type: ignore[prop-decorator]
     @property

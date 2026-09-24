@@ -2,6 +2,7 @@
 
 from app.core.config import (
     PROJECT_ROOT,
+    RESOURCE_ROOT,
     AIProvider,
     Environment,
     LogFormat,
@@ -13,6 +14,7 @@ from app.core.sanitize import clean_line, clean_text, normalize_slug
 
 __all__ = [
     "PROJECT_ROOT",
+    "RESOURCE_ROOT",
     "AIProvider",
     "Environment",
     "LogFormat",
