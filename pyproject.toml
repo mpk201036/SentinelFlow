@@ -41,7 +41,7 @@ dev = [
     "hypothesis>=6.100",
     "ruff>=0.6",
     "mypy>=1.11",
-    "types-PyYAML>=6.0",
+    "types-PyYAML>=6.0.12.20260906",
     "twine>=5.1",
 ]
 
