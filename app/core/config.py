@@ -27,7 +27,7 @@ from pathlib import Path
 from typing import Annotated, Any
 
 from pydantic import Field, computed_field, field_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 # A source checkout keeps runtime resources beside ``app/``.  A wheel installs
 # the same files under ``share/sentinelflow``.  Keep writes (the SQLite database,
@@ -81,6 +81,11 @@ class AIProvider(StrEnum):
 
     NONE = "none"
     OLLAMA = "ollama"
+
+
+#: Bind addresses that mean "every interface". Named so they can be recognised
+#: and refused as host names; nothing binds to them because of this constant.
+WILDCARD_ADDRESSES = frozenset({"0.0.0.0", "::"})  # noqa: S104
 
 
 def is_loopback_host(host: str) -> bool:
@@ -152,9 +157,16 @@ class Settings(BaseSettings):
     #: runaway importer, not a substitute for a gateway in front of a real
     #: deployment: it is per-process and resets when the process does.
     api_rate_limit_per_minute: Annotated[int, Field(ge=0, le=100_000)] = 600
-    #: Interactive OpenAPI docs at /docs. Useful locally; turn off if the API
-    #: is ever exposed, since it enumerates every endpoint.
-    api_docs_enabled: bool = True
+    #: Host names the server answers to, besides this machine's own loopback
+    #: names and the address it binds to, which are always allowed. Any other
+    #: Host is refused: that is what defeats DNS rebinding, where a web page
+    #: points its own domain at 127.0.0.1 and can then read the console as if
+    #: it were that page. Comma-separated, e.g. "sentinel.lab.internal".
+    allowed_hosts: Annotated[list[str], NoDecode] = Field(default_factory=list)
+    #: Interactive API docs at /docs. Off by default: the page runs scripts
+    #: from a CDN, which the console's own Content-Security-Policy forbids, so
+    #: when switched on it is served under a separate, narrower policy.
+    api_docs_enabled: bool = False
     #: Largest page any list endpoint will return.
     api_max_page_size: Annotated[int, Field(ge=1, le=1_000)] = 200
 
@@ -209,6 +221,19 @@ class Settings(BaseSettings):
         if level not in allowed:
             raise ValueError(f"log_level must be one of {sorted(allowed)}, got {value!r}")
         return level
+
+    @field_validator("allowed_hosts", mode="before")
+    @classmethod
+    def _split_hosts(cls, value: Any) -> Any:
+        if isinstance(value, str):
+            value = value.split(",")
+        if not isinstance(value, list | tuple):
+            return value
+        hosts = [str(item).strip().strip("[]").lower() for item in value if str(item).strip()]
+        if any(host == "*" or "*" in host for host in hosts):
+            # A wildcard would switch the protection off while looking like a setting.
+            raise ValueError("allowed_hosts takes exact host names; wildcards are refused")
+        return hosts
 
     @field_validator("database_url", mode="after")
     @classmethod
@@ -335,6 +360,14 @@ class Settings(BaseSettings):
     def is_production(self) -> bool:
         return self.environment is Environment.PRODUCTION
 
+    def trusted_hosts(self) -> frozenset[str]:
+        """Every Host name the server answers to, beyond loopback addresses."""
+        names = {"localhost"} | set(self.allowed_hosts)
+        bind = self.api_host.strip().strip("[]").lower()
+        if bind and bind not in WILDCARD_ADDRESSES:  # a wildcard is not a name anyone uses
+            names.add(bind)
+        return frozenset(names)
+
     @computed_field  # type: ignore[prop-decorator]
     @property
     def api_is_exposed(self) -> bool:
@@ -363,6 +396,7 @@ class Settings(BaseSettings):
             "database_url": self.database_url,
             "api": f"{self.api_host}:{self.api_port}",
             "api_rate_limit_per_minute": self.api_rate_limit_per_minute,
+            "allowed_hosts": list(self.allowed_hosts),
             "api_docs_enabled": self.api_docs_enabled,
             "log_level": self.log_level,
             "log_format": self.log_format.value,

@@ -313,8 +313,10 @@ copy can be checked later. See [docs/reports.md](docs/reports.md).
 
 ## API
 
-Interactive documentation is served at `/docs` while `SENTINELFLOW_API_DOCS_ENABLED`
-is true (the default for local use).
+Interactive documentation is served at `/docs` when
+`SENTINELFLOW_API_DOCS_ENABLED=true`. It is off by default: the page runs a
+script from a CDN, so it gets a narrow security policy of its own rather than
+loosening the console's.
 
 | Method | Path | Purpose |
 |---|---|---|

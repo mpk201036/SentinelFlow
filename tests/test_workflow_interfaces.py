@@ -84,7 +84,7 @@ def _form(client: TestClient, path: str) -> tuple[str, str]:
 
 
 #: What a browser adds to a form post from our own page.
-SAME_ORIGIN = {"Sec-Fetch-Site": "same-origin", "Origin": "http://testserver"}
+SAME_ORIGIN = {"Sec-Fetch-Site": "same-origin", "Origin": "http://127.0.0.1"}
 
 
 # ===========================================================================
@@ -265,7 +265,7 @@ class TestCrossSiteGuard:
             # its own same-origin form posts. Fetch metadata must win.
             {"Sec-Fetch-Site": "same-origin", "Origin": "null"},
             {"Sec-Fetch-Site": "none"},  # typed into the address bar, bookmarks
-            {"Origin": "http://testserver"},
+            {"Origin": "http://127.0.0.1"},
             {},  # curl, scripts: not a browser
         ],
         ids=[

@@ -138,6 +138,9 @@ each one in [testing.md](testing.md). Architecturally:
    to a log the database will not let anyone edit.
 5. **The browser cannot be turned against the analyst.** Cross-site writes are
    refused for the whole application, and console forms carry signed tokens.
+   The server answers only to its own addresses, so a page that re-points its
+   domain at 127.0.0.1 (DNS rebinding) is refused rather than treated as the
+   console.
 
 ## 6. Extension points
 

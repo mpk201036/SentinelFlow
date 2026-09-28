@@ -6,7 +6,22 @@ All notable changes to SentinelFlow are recorded here. The format follows
 
 ## [Unreleased]
 
-Nothing yet.
+### Security
+
+- The server answers only to its own addresses and to names in
+  `SENTINELFLOW_ALLOWED_HOSTS`. Before this, a web page could reach the
+  console through DNS rebinding, reading data and making changes as if it
+  were the console itself. Listening on every interface now requires naming
+  the allowed hosts.
+- Interactive API docs are off by default. When on, `/docs` has its own
+  narrow Content-Security-Policy and a pinned Swagger UI version; `/redoc` is
+  no longer served. Previously the page could not load under the console's
+  policy at all.
+- The database file is created readable by its owner only, and an existing
+  one is tightened.
+- Every GitHub Action is pinned to a commit SHA, checkout keeps no token in
+  the workspace, and Dependabot proposes updates to actions and dependencies.
+- The server no longer announces itself in a `server` header.
 
 ## [0.1.0] - 2026-09-24
 

@@ -153,6 +153,7 @@ class TestSummary:
             "database_url",
             "api",
             "api_rate_limit_per_minute",
+            "allowed_hosts",
             "api_docs_enabled",
             "log_level",
             "log_format",

@@ -34,7 +34,7 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
-from app.core.config import Settings
+from app.core.config import Settings, is_loopback_host
 from app.core.logging import get_logger
 
 logger = get_logger(__name__)
@@ -250,6 +250,49 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         return await call_next(request)
 
 
+def host_name(header: str) -> str:
+    """The name in a Host header: ``localhost:8000`` -> ``localhost``, ``[::1]:8000`` -> ``::1``."""
+    value = header.strip().lower()
+    if value.startswith("["):
+        return value[1 : value.find("]")] if "]" in value else ""
+    return value.rsplit(":", 1)[0] if value.count(":") == 1 else value
+
+
+class HostGuard(BaseHTTPMiddleware):
+    """Answer only to this machine's own addresses and to hosts named in configuration.
+
+    A server on 127.0.0.1 is still reachable from any web page the analyst
+    opens, through DNS rebinding: the page's own domain is re-pointed at
+    127.0.0.1, so the browser treats SentinelFlow as that page, lets it read
+    every response and sends its writes as same-origin, past the cross-site
+    guard. What the page cannot change is the Host header, which still names
+    its own domain. So a request is served only when Host is a loopback
+    address, ``localhost``, the address the server binds to, or a name in
+    ``SENTINELFLOW_ALLOWED_HOSTS``.
+    """
+
+    def __init__(self, app: ASGIApp, allowed: frozenset[str]) -> None:
+        super().__init__(app)
+        self.allowed = allowed
+
+    async def dispatch(self, request: Request, call_next: RequestHandler) -> Response:
+        name = host_name(request.headers.get("host", ""))
+        if name in self.allowed or is_loopback_host(name):
+            return await call_next(request)
+        logger.warning("refused a request addressed to host %r", name[:120])
+        return JSONResponse(
+            status_code=400,
+            content={
+                "error": "invalid_host",
+                "detail": (
+                    "This server answers only to its own address. To reach it by another "
+                    "name, add the name to SENTINELFLOW_ALLOWED_HOSTS."
+                ),
+                "request_id": getattr(request.state, "request_id", None),
+            },
+        )
+
+
 #: Methods that change state. GET and HEAD never do here.
 UNSAFE_METHODS = frozenset({"POST", "PUT", "PATCH", "DELETE"})
 
@@ -319,10 +362,12 @@ def install_middleware(app: FastAPI, settings: Settings) -> None:
     """Attach middleware in the order requests should meet it.
 
     Starlette runs the last one added first, so requests meet: body size limit,
-    request context and security headers, cross-site guard, rate limit.
+    request context and security headers, host check, cross-site guard, rate
+    limit.
     """
     if settings.api_rate_limit_per_minute > 0:
         app.add_middleware(RateLimitMiddleware, per_minute=settings.api_rate_limit_per_minute)
     app.add_middleware(CrossSiteWriteGuard)
+    app.add_middleware(HostGuard, allowed=settings.trusted_hosts())
     app.add_middleware(RequestContextMiddleware)
     app.add_middleware(BodySizeLimitMiddleware, max_bytes=settings.max_upload_bytes)

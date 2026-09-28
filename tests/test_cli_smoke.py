@@ -252,3 +252,30 @@ def test_running_the_demo_twice_does_not_add_a_second_attack(empty_env: dict[str
     forced = _run(empty_env, "demo", "--force")
     assert forced.exit_code == 0
     assert "56 events ingested" in forced.output
+
+
+# ---------------------------------------------------------------------------
+# Security pass: exposing the server has to name who it answers to
+# ---------------------------------------------------------------------------
+def test_every_interface_without_allowed_hosts_is_refused(empty_env: dict[str, str]) -> None:
+    result = _run(empty_env, "serve", "--host", "0.0.0.0", "--expose")
+    assert result.exit_code == 2
+    assert "SENTINELFLOW_ALLOWED_HOSTS" in result.output
+
+
+def test_serve_hands_its_address_to_the_app_and_hides_its_banner(
+    empty_env: dict[str, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import os
+
+    assert _run(empty_env, "init-db").exit_code == 0
+    started: dict[str, Any] = {}
+    monkeypatch.setattr("uvicorn.run", lambda *args, **kwargs: started.update(kwargs))
+    monkeypatch.setenv("SENTINELFLOW_API_HOST", "127.0.0.1")  # restored afterwards
+    env = {**empty_env, "SENTINELFLOW_ALLOWED_HOSTS": "sentinel.lab.internal"}
+
+    result = _run(env, "serve", "--host", "0.0.0.0", "--expose", "--port", "8799")
+
+    assert result.exit_code == 0, result.output
+    assert started["host"] == "0.0.0.0" and started["server_header"] is False
+    assert os.environ["SENTINELFLOW_API_HOST"] == "0.0.0.0"  # what the app's Host check reads

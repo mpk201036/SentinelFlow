@@ -16,6 +16,7 @@ Two other pragmas matter in practice:
 
 from __future__ import annotations
 
+import os
 import sqlite3
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -59,6 +60,24 @@ def _sqlite_path(database_url: str) -> Path | None:
     return Path(raw)
 
 
+def _owner_only(path: Path) -> None:
+    """Make the database file readable and writable by its owner alone.
+
+    It holds everything ingested - usernames, hosts, command lines, analyst
+    notes - and under the usual umask it would be readable by every account on
+    the machine. It is created with owner-only permissions before SQLite opens
+    it (an empty file is a valid empty database), and an existing file is
+    tightened. SQLite gives its -wal and -shm files the database's permissions.
+    """
+    if os.name != "posix":  # pragma: no cover - Windows uses ACLs, not mode bits
+        return
+    if not path.exists():
+        os.close(os.open(path, os.O_CREAT | os.O_WRONLY, 0o600))
+    elif path.stat().st_mode & 0o077:
+        logger.info("restricting %s to its owner", path)
+        path.chmod(0o600)
+
+
 def create_db_engine(settings: Settings | None = None, *, echo: bool = False) -> Engine:
     """Build an engine with SQLite pragmas attached."""
     settings = settings or get_settings()
@@ -67,6 +86,7 @@ def create_db_engine(settings: Settings | None = None, *, echo: bool = False) ->
     path = _sqlite_path(url)
     if path is not None:
         path.parent.mkdir(parents=True, exist_ok=True)
+        _owner_only(path)
 
     engine = create_engine(
         url,

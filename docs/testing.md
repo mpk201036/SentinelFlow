@@ -90,6 +90,10 @@ failed for the right reason.
 | An edited report is detected | `test_reports.py::TestFingerprints`, `test_end_to_end.py` |
 | The verdict cannot be poisoned | `test_ai_boundary.py`, `test_ai_service.py::…verdict_does_not_move…`, `test_properties.py::TestWorkflowInvariants` |
 | Rate limiting and generic errors behave | `test_security_controls.py::TestRateLimit`, `::TestErrors`, `::TestHeadersEverywhere` |
+| A web page cannot reach the console by DNS rebinding | `test_security_controls.py::TestHostGuard`, `test_cli_smoke.py` (exposure needs allowed hosts) |
+| The API docs cannot run a CDN script in the console | `test_security_controls.py::TestApiDocs` |
+| Another account cannot read the database | `test_security_controls.py::TestDatabaseFile` |
+| CI and the release run only reviewed code | `test_project_structure.py::TestSupplyChain` |
 | The same events give the same verdict, in one import or as a feed | `test_reproducibility.py`, `test_detection_engine.py::TestThresholdAcrossBatches` |
 
 ## The documentation is tested too

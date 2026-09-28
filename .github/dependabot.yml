@@ -1,0 +1,18 @@
+# Reviewed, weekly updates. Actions are pinned to commit SHAs in the workflows,
+# so a moved tag cannot change what runs; Dependabot proposes each new SHA as
+# a pull request, which CI checks before anything merges.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns: ["*"]
+
+  - package-ecosystem: pip
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5

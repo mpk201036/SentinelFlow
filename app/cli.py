@@ -21,7 +21,13 @@ from rich.markup import escape
 from rich.table import Table
 
 from app import __version__
-from app.core.config import AIProvider, Settings, get_settings, is_loopback_host
+from app.core.config import (
+    WILDCARD_ADDRESSES,
+    AIProvider,
+    Settings,
+    get_settings,
+    is_loopback_host,
+)
 from app.core.display import counted
 from app.core.logging import configure_logging, get_logger
 from app.database.init_db import current_version, database_status, initialize_database
@@ -1397,11 +1403,24 @@ def serve(
                 "[bold]--expose[/bold] if you accept that."
             )
             raise typer.Exit(code=2)
+        if bind_host.strip("[]") in WILDCARD_ADDRESSES and not settings.allowed_hosts:
+            # Every interface, and no name to answer to: the Host check would
+            # refuse every client, or tempt someone into disabling it.
+            console.print(
+                f"[red]Listening on every interface ({bind_host}) needs the names clients will "
+                "use.[/red] Set SENTINELFLOW_ALLOWED_HOSTS, for example to your reverse "
+                "proxy's host name, then run again."
+            )
+            raise typer.Exit(code=2)
         console.print(
             f"[bold red]WARNING[/bold red] listening on {bind_host} with no authentication. "
             "Everything here is reachable by anyone who can reach this address."
         )
     _require_database(settings)
+    # uvicorn builds the app from the environment, so the address given here
+    # reaches it that way; the Host check answers to the address it binds.
+    os.environ["SENTINELFLOW_API_HOST"] = bind_host
+    get_settings.cache_clear()
 
     console.print(
         f"[bold]SentinelFlow[/bold] {__version__}  [dim]http://{bind_host}:{bind_port}[/dim]"
@@ -1422,6 +1441,7 @@ def serve(
         reload=reload,
         factory=True,
         log_level=settings.log_level.lower(),
+        server_header=False,  # no need to tell every client which server this is
     )
 
 

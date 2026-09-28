@@ -15,6 +15,7 @@ from sqlalchemy.orm import sessionmaker
 from app import __version__
 from app.ai.providers import ProviderConfigurationError, build_provider
 from app.api.dependencies import AIState
+from app.api.docs import install_docs
 from app.api.errors import register_error_handlers
 from app.api.middleware import install_middleware
 from app.api.routes import ai, alerts, audit, events, incidents, operations, rules
@@ -52,8 +53,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "AI-Assisted Security Alert Triage — deterministic pipeline, "
             "advisory AI, human confirms."
         ),
-        docs_url="/docs" if cfg.api_docs_enabled else None,
-        redoc_url="/redoc" if cfg.api_docs_enabled else None,
+        # The docs page is installed below, on a policy of its own; see app/api/docs.py.
+        docs_url=None,
+        redoc_url=None,
         openapi_url="/openapi.json" if cfg.api_docs_enabled else None,
     )
 
@@ -75,6 +77,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     # The analyst console: same process, same pipeline, same security headers.
     install_console(app)
+    if cfg.api_docs_enabled and app.openapi_url:
+        install_docs(app, app.openapi_url)
 
     return app
 

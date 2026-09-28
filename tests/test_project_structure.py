@@ -91,3 +91,28 @@ class TestSecretHygiene:
         content = (project_root / ".env.example").read_text(encoding="utf-8").lower()
         for marker in ("sk-", "aws_secret", "-----begin", "ghp_", "xoxb-"):
             assert marker not in content, f"suspicious value in .env.example: {marker}"
+
+
+class TestSupplyChain:
+    """Security pass: what runs in CI and the release job is fixed, not whatever a tag says."""
+
+    def test_every_action_is_pinned_to_a_commit(self, project_root: Path) -> None:
+        import re
+
+        unpinned = []
+        for workflow in sorted((project_root / ".github" / "workflows").glob("*.yml")):
+            for line in workflow.read_text(encoding="utf-8").splitlines():
+                match = re.search(r"uses:\s*([^\s#]+)", line)
+                if match and not re.search(r"@[0-9a-f]{40}$", match.group(1)):
+                    unpinned.append(f"{workflow.name}: {match.group(1)}")
+        assert not unpinned, f"pin these to a full commit SHA: {unpinned}"
+
+    def test_checkout_does_not_leave_the_token_behind(self, project_root: Path) -> None:
+        for workflow in (project_root / ".github" / "workflows").glob("*.yml"):
+            text = workflow.read_text(encoding="utf-8")
+            assert text.count("actions/checkout@") == text.count("persist-credentials: false")
+
+    def test_dependencies_and_actions_get_reviewed_updates(self, project_root: Path) -> None:
+        config = (project_root / ".github" / "dependabot.yml").read_text(encoding="utf-8")
+        assert "package-ecosystem: github-actions" in config
+        assert "package-ecosystem: pip" in config

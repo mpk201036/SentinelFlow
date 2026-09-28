@@ -10,8 +10,10 @@ import logging
 import os
 from collections.abc import Iterator
 from pathlib import Path
+from typing import Any
 
 import pytest
+from fastapi.testclient import TestClient
 from hypothesis import HealthCheck
 from hypothesis import settings as hypothesis_settings
 from sqlalchemy import Engine
@@ -80,6 +82,25 @@ def clean_env(monkeypatch: pytest.MonkeyPatch) -> pytest.MonkeyPatch:
 def settings(clean_env: pytest.MonkeyPatch) -> Settings:
     """Default settings, isolated from any .env file on disk."""
     return Settings(_env_file=None)
+
+
+@pytest.fixture(autouse=True, scope="session")
+def _loopback_test_client() -> Iterator[None]:
+    """Address test requests to 127.0.0.1, as a browser on this machine would.
+
+    The test client's default host, "testserver", is not a name SentinelFlow
+    answers to: HostGuard refuses every Host but its own addresses, which is
+    what stops DNS rebinding. Tests should meet the server as a user does.
+    """
+    original = TestClient.__init__
+
+    def init(self: TestClient, app: Any, base_url: str = "http://127.0.0.1", **kw: Any) -> None:
+        original(self, app, base_url=base_url, **kw)
+
+    # Session-wide, so it is in place before module-scoped clients are built.
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(TestClient, "__init__", init)
+        yield
 
 
 @pytest.fixture(autouse=True)
