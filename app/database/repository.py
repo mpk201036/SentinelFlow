@@ -502,7 +502,8 @@ def alert_times_by_host(
     ).all()
     found: dict[str, list[datetime]] = {}
     for key, moment in rows:
-        found.setdefault(key, []).append(moment)
+        if key is not None:  # the IN filter excludes NULL; the column type still allows it
+            found.setdefault(key, []).append(moment)
     return found
 
 
